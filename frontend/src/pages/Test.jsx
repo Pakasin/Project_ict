@@ -59,7 +59,7 @@ export default function Test() {
     setFeatures(updated)
   }
 
-  // NSL-KDD feature names (key ones)
+  // UNSW-NB15 feature names (key ones)
   const nslFeatureNames = [
     'duration', 'protocol_type', 'service', 'flag', 'src_bytes',
     'dst_bytes', 'land', 'wrong_fragment', 'urgent', 'hot',
@@ -99,14 +99,14 @@ export default function Test() {
           className={`tab-btn ${activeTab === 'intrusion' ? 'active' : ''}`}
           onClick={() => { setActiveTab('intrusion'); setResult(null); setError(null) }}
         >
-          🔐 Intrusion (NSL-KDD)
+          🔐 Intrusion (UNSW-NB15)
         </button>
         <button
           id="tab-flow"
           className={`tab-btn ${activeTab === 'flow' ? 'active' : ''}`}
           onClick={() => { setActiveTab('flow'); setResult(null); setError(null) }}
         >
-          🌊 Flow (CICIDS)
+          🌊 Flow (CSE-CIC-IDS2018)
         </button>
       </div>
 
@@ -161,7 +161,7 @@ export default function Test() {
         {activeTab === 'intrusion' && (
           <div>
             <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '16px' }}>
-              Enter 41 NSL-KDD features. The model will detect R2L and U2R attacks.
+              Enter 41 UNSW-NB15 features. The model will detect R2L and U2R attacks.
             </p>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '8px', maxHeight: '400px', overflowY: 'auto', marginBottom: '16px', padding: '4px' }}>
@@ -198,7 +198,7 @@ export default function Test() {
         {activeTab === 'flow' && (
           <div>
             <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '16px' }}>
-              Enter 78 CICIDS features. The model will detect DDoS, DoS, PortScan, and BruteForce attacks.
+              Enter 78 CSE-CIC-IDS2018 features. The model will detect DDoS, DoS, PortScan, and BruteForce attacks.
             </p>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '8px', maxHeight: '400px', overflowY: 'auto', marginBottom: '16px', padding: '4px' }}>

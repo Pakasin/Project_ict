@@ -14,11 +14,11 @@ cybershield/
 │   ├── auth/
 │   │   └── session.py            # require_login dependency
 │   ├── models/
-│   │   ├── lstm_nslkdd.h5
-│   │   ├── lstm_cicids.h5
+│   │   ├── lstm_unswnb15.h5
+│   │   ├── lstm_csecicids2018.h5
 │   │   ├── lstm_sqli.h5
-│   │   ├── scaler_nslkdd.pkl
-│   │   └── scaler_cicids.pkl
+│   │   ├── scaler_unswnb15.pkl
+│   │   └── scaler_csecicids2018.pkl
 │   ├── routes/
 │   │   ├── predict.py            # /test manual endpoint
 │   │   ├── internal.py           # /internal/event (sensor IPC)
@@ -36,8 +36,8 @@ cybershield/
 │   │   └── App.jsx
 │   └── dist/                     # built by `npm run build` → served by nginx
 ├── notebooks/                    # Kaggle .ipynb files
-│   ├── train_nslkdd.ipynb
-│   ├── train_cicids.ipynb
+│   ├── train_unswnb15.ipynb
+│   ├── train_csecicids2018.ipynb
 │   └── train_sqli.ipynb
 └── nginx.conf
 ```
@@ -84,7 +84,7 @@ nginx เปิด mirror port หรือ bridge mode ให้เห็น tr
 
 ## Phase 2 — Kaggle Training (3 Models)
 
-### หลักการร่วมกันของ NSL-KDD และ CICIDS
+### หลักการร่วมกันของ UNSW-NB15 และ CSE-CIC-IDS2018
 
 ทั้งสองโมเดลใช้ **Sliding Window** shape `(10, features)` โดย:
 1. sort flows ตาม timestamp
@@ -93,10 +93,10 @@ nginx เปิด mirror port หรือ bridge mode ให้เห็น tr
 4. windows ที่สั้นกว่า 10 (ต้นๆ ของแต่ละ IP) → **zero-pad ด้านหน้า**
 5. fit `StandardScaler` บน training set → บันทึกเป็น `.pkl`
 
-### Model 1: Intrusion Model (NSL-KDD)
+### Model 1: Intrusion Model (UNSW-NB15)
 
-- Dataset: NSL-KDD (~25 MB) — ใช้เฉพาะ class **R2L + U2R + Normal** (ตัด DoS/Probe ออก)
-- Output shape: `(10, 41)` → Dense 3 (Normal / R2L / U2R)
+- Dataset: UNSW-NB15 (~25 MB) — ใช้เฉพาะ class **R2L + U2R + Normal** (ตัด DoS/Probe ออก)
+- Output shape: `(10, 49)` → Dense 3 (Normal / R2L / U2R)
 
 ```python
 from sklearn.preprocessing import StandardScaler
@@ -104,12 +104,12 @@ import joblib
 import numpy as np
 
 # --- Feature prep ---
-# df = NSL-KDD dataframe, keep only Normal/R2L/U2R rows
+# df = UNSW-NB15 dataframe, keep only Normal/R2L/U2R rows
 # encode categoricals, drop label column
 
 scaler = StandardScaler()
 X_scaled = scaler.fit_transform(X)  # fit บน train set เท่านั้น
-joblib.dump(scaler, 'scaler_nslkdd.pkl')
+joblib.dump(scaler, 'scaler_unswnb15.pkl')
 
 # --- Sliding window ---
 def make_windows(X, y, window=10):
@@ -131,7 +131,7 @@ from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import LSTM, Dropout, Dense
 
 model = Sequential([
-    LSTM(128, input_shape=(10, 41), return_sequences=True),
+    LSTM(128, input_shape=(10, 49), return_sequences=True),
     Dropout(0.3),
     LSTM(64),
     Dropout(0.3),
@@ -139,21 +139,21 @@ model = Sequential([
 ])
 model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
 model.fit(X_train_w, y_train_w, epochs=20, batch_size=64, validation_split=0.2)
-model.save('lstm_nslkdd.h5')
+model.save('lstm_unswnb15.h5')
 ```
 
-### Model 2: Flow Model (CICIDS 2017)
+### Model 2: Flow Model (CSE-CIC-IDS2018)
 
-- Dataset: `Friday-WorkingHours-Afternoon-DDos.pcap_ISCX.csv` (~600 MB)
+- Dataset: `CSE-CIC-IDS2018-AWS.csv` (~600 MB)
 - Classes: **DoS, DDoS, PortScan, BruteForce, BENIGN**
 - Output shape: `(10, 78)` → Dense 5
 
 ```python
 scaler = StandardScaler()
 X_scaled = scaler.fit_transform(X)
-joblib.dump(scaler, 'scaler_cicids.pkl')
+joblib.dump(scaler, 'scaler_csecicids2018.pkl')
 
-# sliding window เหมือน NSL-KDD (group by Src IP column)
+# sliding window เหมือน UNSW-NB15 (group by Src IP column)
 
 model = Sequential([
     LSTM(128, input_shape=(10, 78), return_sequences=True),
@@ -162,7 +162,7 @@ model = Sequential([
     Dropout(0.3),
     Dense(5, activation='softmax')
 ])
-model.save('lstm_cicids.h5')
+model.save('lstm_csecicids2018.h5')
 ```
 
 ### Model 3: Injection Model (SQLi)
@@ -213,11 +213,11 @@ load_dotenv()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Load models + scalers at startup
-    app.state.model_intrusion = tf.keras.models.load_model("models/lstm_nslkdd.h5")
-    app.state.model_flow      = tf.keras.models.load_model("models/lstm_cicids.h5")
+    app.state.model_intrusion = tf.keras.models.load_model("models/lstm_unswnb15.h5")
+    app.state.model_flow      = tf.keras.models.load_model("models/lstm_csecicids2018.h5")
     app.state.model_sqli      = tf.keras.models.load_model("models/lstm_sqli.h5")
-    app.state.scaler_intrusion = joblib.load("models/scaler_nslkdd.pkl")
-    app.state.scaler_flow      = joblib.load("models/scaler_cicids.pkl")
+    app.state.scaler_intrusion = joblib.load("models/scaler_unswnb15.pkl")
+    app.state.scaler_flow      = joblib.load("models/scaler_csecicids2018.pkl")
     app.state.tokenizer_sqli   = joblib.load("models/tokenizer_sqli.pkl")
     print("All models loaded")
     yield
@@ -333,19 +333,19 @@ load_dotenv()
 windows = defaultdict(list)
 WINDOW_SIZE = 10
 
-scaler_intrusion = joblib.load("models/scaler_nslkdd.pkl")
-scaler_flow      = joblib.load("models/scaler_cicids.pkl")
+scaler_intrusion = joblib.load("models/scaler_unswnb15.pkl")
+scaler_flow      = joblib.load("models/scaler_csecicids2018.pkl")
 
 INTERNAL_URL   = "http://localhost:8000/internal/event"
 INTERNAL_TOKEN = os.getenv("INTERNAL_TOKEN")
 
-def extract_nslkdd_features(flow) -> list:
-    # map nfstream flow attributes → NSL-KDD 41 features
-    # (implement based on NSL-KDD feature list)
+def extract_unswnb15_features(flow) -> list:
+    # map nfstream flow attributes → UNSW-NB15 49 features
+    # (implement based on UNSW-NB15 feature list)
     return [...]
 
-def extract_cicids_features(flow) -> list:
-    # map nfstream flow attributes → CICIDS 78 features
+def extract_csecicids2018_features(flow) -> list:
+    # map nfstream flow attributes → CSE-CIC-IDS2018 78 features
     return [...]
 
 def make_padded_window(features_list, feature_len):
@@ -372,16 +372,16 @@ streamer = nfstream.NFStreamer(
 for flow in streamer:
     src_ip = flow.src_ip
 
-    # --- Intrusion Model (NSL-KDD: R2L / U2R) ---
-    nsl_features = extract_nslkdd_features(flow)
+    # --- Intrusion Model (UNSW-NB15: R2L / U2R) ---
+    nsl_features = extract_unswnb15_features(flow)
     windows[f"nsl_{src_ip}"].append(nsl_features)
     X_nsl = make_padded_window(windows[f"nsl_{src_ip}"], 41)
     X_nsl_scaled = scaler_intrusion.transform(X_nsl.reshape(-1, 41)).reshape(1, 10, 41)
     # load model and predict (or import from shared state)
 
-    # --- Flow Model (CICIDS: DDoS / BruteForce / PortScan / DoS) ---
-    cic_features = extract_cicids_features(flow)
-    windows[f"cic_{src_ip}"].append(cic_features)
+    # --- Flow Model (CSE-CIC-IDS2018: DDoS / BruteForce / PortScan / DoS) ---
+    csecic_features = extract_csecicids2018_features(flow)
+    windows[f"cic_{src_ip}"].append(csecic_features)
     X_cic = make_padded_window(windows[f"cic_{src_ip}"], 78)
     X_cic_scaled = scaler_flow.transform(X_cic.reshape(-1, 78)).reshape(1, 10, 78)
     # predict and post_event if confidence >= threshold
@@ -467,7 +467,7 @@ export default function Dashboard() {
 
 ```jsx
 // POST ตรงไปที่ /api/predict ข้าม sensor
-// แสดง 3 tabs: Network (NSL-KDD features), Flow (CICIDS features), SQLi (text input)
+// แสดง 3 tabs: Network (UNSW-NB15 features), Flow (CSE-CIC-IDS2018 features), SQLi (text input)
 ```
 
 ---

@@ -8,7 +8,7 @@
 | Topic | Decision |
 |---|---|
 | GPU | Kaggle Free (Tesla T4 / P100 - 30 hrs/week) |
-| Dataset | NSL-KDD + Kaggle SQLi + CICIDS 2017 (subset) |
+| Dataset | UNSW-NB15 + SecLists SQLi + CSE-CIC-IDS2018 (subset) |
 | Real-time | WebSocket (/ws/predict) + HTTP POST fallback |
 | Auth | Session-based (Starlette SessionMiddleware) |
 
@@ -42,9 +42,9 @@ project/
 │   ├── auth/
 │   │   └── session.py
 │   ├── models/
-│   │   ├── lstm_nslkdd.h5
+│   │   ├── lstm_unswnb15.h5
 │   │   ├── lstm_sqli.h5
-│   │   └── lstm_cicids.h5
+│   │   └── lstm_csecicids2018.h5
 │   └── routes/
 ├── frontend/
 └── notebooks/   ← Kaggle .ipynb files
@@ -104,11 +104,11 @@ Limit: 30 hrs/week (เพียงพอสำหรับ 3 โมเดล)
 
 ---
 
-### Model 1: NSL-KDD - Network Intrusion Detection
+### Model 1: UNSW-NB15 - Network Intrusion Detection
 
-- Dataset: NSL-KDD (~25 MB, Public)
+- Dataset: UNSW-NB15 (~25 MB, Public)
 - Target: 5 classes - Normal, DoS, Probe, R2L, U2R
-- Output: lstm_nslkdd.h5
+- Output: lstm_unswnb15.h5
 
 ```python
 model = Sequential([
@@ -118,14 +118,14 @@ model = Sequential([
     Dropout(0.3),
     Dense(5, activation='softmax')
 ])
-model.save('lstm_nslkdd.h5')
+model.save('lstm_unswnb15.h5')
 ```
 
 ---
 
-### Model 2: Kaggle SQLi - SQL Injection Detection
+### Model 2: SecLists SQLi - SQL Injection Detection
 
-- Dataset: Kaggle SQL Injection Dataset (sajid576/sql-injection-dataset)
+- Dataset: SecLists SQLi Dataset (sajid576/sql-injection-dataset)
 - Target: Binary - Normal / SQL Injection
 - Output: lstm_sqli.h5
 
@@ -141,11 +141,11 @@ model.save('lstm_sqli.h5')
 
 ---
 
-### Model 3: CICIDS 2017 - BruteForce / DDoS Detection
+### Model 3: CSE-CIC-IDS2018 - BruteForce / DDoS Detection
 
-- Dataset: Friday-WorkingHours-Afternoon-DDos.pcap_ISCX.csv (~600 MB จาก 7 GB)
+- Dataset: CSE-CIC-IDS2018-AWS.csv (~600 MB จาก 7 GB)
 - Target: 4 classes - DoS, DDoS, PortScan, BruteForce
-- Output: lstm_cicids.h5
+- Output: lstm_csecicids2018.h5
 
 ```python
 model = Sequential([
@@ -153,7 +153,7 @@ model = Sequential([
     Dropout(0.2),
     Dense(4, activation='softmax')
 ])
-model.save('lstm_cicids.h5')
+model.save('lstm_csecicids2018.h5')
 ```
 
 ---
@@ -165,9 +165,9 @@ model.save('lstm_cicids.h5')
 ```python
 @app.on_event("startup")
 async def load_models():
-    app.state.model_nslkdd = load_model("models/lstm_nslkdd.h5")
+    app.state.model_unswnb15 = load_model("models/lstm_unswnb15.h5")
     app.state.model_sqli   = load_model("models/lstm_sqli.h5")
-    app.state.model_cicids = load_model("models/lstm_cicids.h5")
+    app.state.model_csecicids2018 = load_model("models/lstm_csecicids2018.h5")
     print("All 3 models loaded")
 ```
 
@@ -264,7 +264,7 @@ ws.send(JSON.stringify({
 | Database | SQLite (or PostgreSQL) |
 | Frontend | React / Jinja2 Templates |
 | Training | Kaggle Notebooks (Free GPU: T4/P100) |
-| Datasets | NSL-KDD, Kaggle SQLi, CICIDS 2017 |
+| Datasets | UNSW-NB15, SecLists SQLi, CSE-CIC-IDS2018 |
 
 ---
 

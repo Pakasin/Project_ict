@@ -30,7 +30,7 @@
 │  ┌──────────┐ ┌──────────┐ ┌──────────┐ │
 │  │ Intrusion│ │  Flow    │ │ Injection│ │
 │  │  Model   │ │  Model   │ │  Model   │ │
-│  │(NSL-KDD) │ │(CICIDS)  │ │  (SQLi)  │ │
+│  │(UNSW-NB15) │ │(CSE-CIC-IDS2018)  │ │  (SQLi)  │ │
 │  └──────────┘ └──────────┘ └──────────┘ │
 │                                          │
 │  ┌──────────┐ ┌──────────┐              │
@@ -77,29 +77,29 @@ graph LR
 ### Step 3 — 3 LSTM Models ทำ Prediction
 
 ````carousel
-### 🔴 Model 1: Intrusion Model (NSL-KDD)
+### 🔴 Model 1: Intrusion Model (UNSW-NB15)
 
 | รายละเอียด | ค่า |
 |---|---|
-| **Dataset** | NSL-KDD (~25 MB) |
-| **Input shape** | `(10, 41)` — 10 flows × 41 features |
+| **Dataset** | UNSW-NB15 (~25 MB) |
+| **Input shape** | `(10, 49)` — 10 flows × 49 features |
 | **Output** | 3 classes: **Normal, R2L, U2R** |
-| **Scaler** | `scaler_nslkdd.pkl` |
-| **ไฟล์ model** | `lstm_nslkdd.h5` |
+| **Scaler** | `scaler_unswnb15.pkl` |
+| **ไฟล์ model** | `lstm_unswnb15.h5` |
 
 **ตรวจจับ:**
 - **R2L** (Remote-to-Local) — พยายามเข้าถึงระบบจากระยะไกลโดยไม่ได้รับอนุญาต
 - **U2R** (User-to-Root) — ยกระดับสิทธิ์จาก user ธรรมดาเป็น root
 <!-- slide -->
-### 🟠 Model 2: Flow Model (CICIDS 2017)
+### 🟠 Model 2: Flow Model (CSE-CIC-IDS2018)
 
 | รายละเอียด | ค่า |
 |---|---|
-| **Dataset** | CICIDS 2017 Friday-Afternoon (~600 MB) |
+| **Dataset** | CSE-CIC-IDS2018 Friday-Afternoon (~600 MB) |
 | **Input shape** | `(10, 78)` — 10 flows × 78 features |
 | **Output** | 5 classes: **Benign, DoS, DDoS, PortScan, BruteForce** |
-| **Scaler** | `scaler_cicids.pkl` |
-| **ไฟล์ model** | `lstm_cicids.h5` |
+| **Scaler** | `scaler_csecicids2018.pkl` |
+| **ไฟล์ model** | `lstm_csecicids2018.h5` |
 
 **ตรวจจับ:**
 - **DDoS** — โจมตีแบบกระจายเพื่อทำให้ระบบล่ม
@@ -111,7 +111,7 @@ graph LR
 
 | รายละเอียด | ค่า |
 |---|---|
-| **Dataset** | Kaggle SQL Injection Dataset |
+| **Dataset** | SecLists SQLi Dataset |
 | **Input** | Raw text (query string + body) → Embedding |
 | **Output** | Binary: **Normal / SQL Injection** |
 | **Tokenizer** | `tokenizer_sqli.pkl` (ไม่ใช้ Scaler) |

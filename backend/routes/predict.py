@@ -6,8 +6,8 @@ POST /api/predict — ส่ง payload ตรงไปที่ model โดย
 และสำหรับ model debugging ตอน development
 
 รองรับ 3 models:
-  - intrusion: รับ 41 features → Intrusion Model (NSL-KDD)
-  - flow: รับ 78 features → Flow Model (CICIDS)
+  - intrusion: รับ 49 features → Intrusion Model (UNSW-NB15)
+  - flow: รับ 78 features → Flow Model (CSE-CIC-IDS2018)
   - sqli: รับ raw text → Injection Model
 """
 
@@ -17,10 +17,10 @@ import numpy as np
 
 router = APIRouter(prefix="/api", tags=["predict"])
 
-# NSL-KDD class labels
+# UNSW-NB15 class labels
 INTRUSION_CLASSES = ["Normal", "R2L", "U2R"]
 
-# CICIDS class labels
+# CSE-CIC-IDS2018 class labels
 FLOW_CLASSES = ["BENIGN", "DoS", "DDoS", "PortScan", "BruteForce"]
 
 
@@ -64,9 +64,9 @@ async def predict(body: PredictRequest, request: Request):
 
 
 async def _predict_intrusion(body: PredictRequest, request: Request) -> PredictResponse:
-    """Intrusion Model (NSL-KDD) — 41 features → 3-class softmax"""
+    """Intrusion Model (UNSW-NB15) — 49 features → 3-class softmax"""
     if not body.features or len(body.features) != 41:
-        raise HTTPException(status_code=400, detail="Intrusion Model requires exactly 41 features")
+        raise HTTPException(status_code=400, detail="Intrusion Model requires exactly 49 features")
 
     model = request.app.state.model_intrusion
     scaler = request.app.state.scaler_intrusion
@@ -96,7 +96,7 @@ async def _predict_intrusion(body: PredictRequest, request: Request) -> PredictR
 
 
 async def _predict_flow(body: PredictRequest, request: Request) -> PredictResponse:
-    """Flow Model (CICIDS) — 78 features → 5-class softmax"""
+    """Flow Model (CSE-CIC-IDS2018) — 78 features → 5-class softmax"""
     if not body.features or len(body.features) != 78:
         raise HTTPException(status_code=400, detail="Flow Model requires exactly 78 features")
 

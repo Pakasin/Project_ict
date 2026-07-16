@@ -42,8 +42,8 @@ graph TB
     %% Processes
     P1["<b>P1</b><br/>Network Sensor<br/>(nfstream)"]
     P2["<b>P2</b><br/>HTTP Sensor<br/>(mitmproxy)"]
-    P3["<b>P3</b><br/>Intrusion Model<br/>(NSL-KDD LSTM)"]
-    P4["<b>P4</b><br/>Flow Model<br/>(CICIDS LSTM)"]
+    P3["<b>P3</b><br/>Intrusion Model<br/>(UNSW-NB15 LSTM)"]
+    P4["<b>P4</b><br/>Flow Model<br/>(CSE-CIC-IDS2018 LSTM)"]
     P5["<b>P5</b><br/>Injection Model<br/>(SQLi LSTM)"]
     P6["<b>P6</b><br/>FastAPI Backend<br/>(Event Processing)"]
     P7["<b>P7</b><br/>Authentication<br/>(Session Middleware)"]
@@ -62,9 +62,9 @@ graph TB
     ADMIN -->|"Manual test payload"| P6
 
     %% Sensor Processing
-    P1 -->|"Extracted flow features<br/>(41 NSL-KDD features)"| D2
-    P1 -->|"Extracted flow features<br/>(78 CICIDS features)"| D2
-    D2 -->|"Sliding window<br/>(10, 41)"| P3
+    P1 -->|"Extracted flow features<br/>(41 UNSW-NB15 features)"| D2
+    P1 -->|"Extracted flow features<br/>(78 CSE-CIC-IDS2018 features)"| D2
+    D2 -->|"Sliding window<br/>(10, 49)"| P3
     D2 -->|"Sliding window<br/>(10, 78)"| P4
     P2 -->|"Query string +<br/>request body text"| P5
 
@@ -99,8 +99,8 @@ graph LR
     NET["🌐 Network Traffic"]
     
     P1_1["P1.1<br/>Capture Flows<br/>(nfstream)"]
-    P1_2["P1.2<br/>Extract NSL-KDD<br/>Features (41)"]
-    P1_3["P1.3<br/>Extract CICIDS<br/>Features (78)"]
+    P1_2["P1.2<br/>Extract UNSW-NB15<br/>Features (49)"]
+    P1_3["P1.3<br/>Extract CSE-CIC-IDS2018<br/>Features (78)"]
     P1_4["P1.4<br/>Scale Features<br/>(StandardScaler)"]
     P1_5["P1.5<br/>Build Sliding<br/>Window (10 flows)"]
     P1_6["P1.6<br/>Zero-Pad<br/>(if < 10 flows)"]
@@ -113,7 +113,7 @@ graph LR
     P1_1 -->|"Completed flow record"| P1_3
     P1_2 -->|"41 raw features"| P1_4
     P1_3 -->|"78 raw features"| P1_4
-    D3 -.->|"scaler_nslkdd.pkl<br/>scaler_cicids.pkl"| P1_4
+    D3 -.->|"scaler_unswnb15.pkl<br/>scaler_csecicids2018.pkl"| P1_4
     P1_4 -->|"Scaled features"| P1_5
     P1_5 -->|"Window < 10 flows"| P1_6
     P1_6 -->|"Padded window (10, features)"| D2

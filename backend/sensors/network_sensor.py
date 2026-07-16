@@ -3,8 +3,8 @@ CyberShield — Network Sensor (nfstream)
 
 จับ live network flows จาก network interface
 แปลงเป็น features สำหรับ 2 models:
-  - Intrusion Model (NSL-KDD): 41 features → R2L / U2R
-  - Flow Model (CICIDS): 78 features → DDoS / DoS / PortScan / BruteForce
+  - Intrusion Model (UNSW-NB15): 49 features → R2L / U2R
+  - Flow Model (CSE-CIC-IDS2018): 78 features → DDoS / DoS / PortScan / BruteForce
 
 ใช้ Sliding Window (group by source IP, window=10, zero-pad ด้านหน้า)
 
@@ -34,31 +34,31 @@ THRESHOLD_FLOW = float(os.getenv("THRESHOLD_FLOW", "0.80"))
 
 # ===== โหลด Models + Scalers =====
 print("📡 Loading models and scalers...")
-model_intrusion = tf.keras.models.load_model("backend/models/lstm_nslkdd.h5")
-model_flow = tf.keras.models.load_model("backend/models/lstm_cicids.h5")
-scaler_intrusion = joblib.load("backend/models/scaler_nslkdd.pkl")
-scaler_flow = joblib.load("backend/models/scaler_cicids.pkl")
+model_intrusion = tf.keras.models.load_model("backend/models/lstm_unswnb15.h5")
+model_flow = tf.keras.models.load_model("backend/models/lstm_csecicids2018.h5")
+scaler_intrusion = joblib.load("backend/models/scaler_unswnb15.pkl")
+scaler_flow = joblib.load("backend/models/scaler_csecicids2018.pkl")
 print("✅ Models loaded")
 
 # ===== Sliding Window Buffer =====
 # group by source IP — attack patterns จาก IP เดียวกันจะถูกตรวจจับได้
 windows: dict[str, list] = defaultdict(list)
 
-# NSL-KDD class labels
+# UNSW-NB15 class labels
 INTRUSION_CLASSES = ["Normal", "R2L", "U2R"]
-# CICIDS class labels
+# CSE-CIC-IDS2018 class labels
 FLOW_CLASSES = ["BENIGN", "DoS", "DDoS", "PortScan", "BruteForce"]
 
 
-def extract_nslkdd_features(flow) -> list:
-    """แปลง nfstream flow → NSL-KDD 41 features
+def extract_unswnb15_features(flow) -> list:
+    """แปลง nfstream flow → UNSW-NB15 49 features
 
-    TODO: implement mapping จาก nfstream attributes ไปยัง NSL-KDD feature set
+    TODO: implement mapping จาก nfstream attributes ไปยัง UNSW-NB15 feature set
     ต้อง map fields เช่น:
     - duration, protocol_type, service, flag
     - src_bytes, dst_bytes, land, wrong_fragment
     - urgent, hot, num_failed_logins, logged_in
-    - ... (ดู NSL-KDD feature list)
+    - ... (ดู UNSW-NB15 feature list)
     """
     # Placeholder — ต้อง implement ตาม feature mapping
     features = [0.0] * 41
@@ -71,15 +71,15 @@ def extract_nslkdd_features(flow) -> list:
     return features
 
 
-def extract_cicids_features(flow) -> list:
-    """แปลง nfstream flow → CICIDS 2017 78 features
+def extract_csecicids2018_features(flow) -> list:
+    """แปลง nfstream flow → CSE-CIC-IDS2018 78 features
 
-    TODO: implement mapping จาก nfstream attributes ไปยัง CICIDS feature set
+    TODO: implement mapping จาก nfstream attributes ไปยัง CSE-CIC-IDS2018 feature set
     ต้อง map fields เช่น:
     - Flow Duration, Total Fwd Packets, Total Backward Packets
     - Flow Bytes/s, Flow Packets/s
     - Fwd/Bwd Packet Length (Min/Max/Mean/Std)
-    - ... (ดู CICIDS 2017 feature list)
+    - ... (ดู CSE-CIC-IDS2018 feature list)
     """
     # Placeholder — ต้อง implement ตาม feature mapping
     features = [0.0] * 78
@@ -136,8 +136,8 @@ def main():
     for flow in streamer:
         src_ip = flow.src_ip
 
-        # === Intrusion Model (NSL-KDD: R2L / U2R) ===
-        nsl_features = extract_nslkdd_features(flow)
+        # === Intrusion Model (UNSW-NB15: R2L / U2R) ===
+        nsl_features = extract_unswnb15_features(flow)
         windows[f"nsl_{src_ip}"].append(nsl_features)
 
         X_nsl = make_padded_window(windows[f"nsl_{src_ip}"], 41)
@@ -155,9 +155,9 @@ def main():
             post_event("intrusion", nsl_class, nsl_confidence, src_ip)
             print(f"🚨 [{src_ip}] Intrusion: {nsl_class} ({nsl_confidence:.1%})")
 
-        # === Flow Model (CICIDS: DDoS / DoS / PortScan / BruteForce) ===
-        cic_features = extract_cicids_features(flow)
-        windows[f"cic_{src_ip}"].append(cic_features)
+        # === Flow Model (CSE-CIC-IDS2018: DDoS / DoS / PortScan / BruteForce) ===
+        csecic_features = extract_csecicids2018_features(flow)
+        windows[f"cic_{src_ip}"].append(csecic_features)
 
         X_cic = make_padded_window(windows[f"cic_{src_ip}"], 78)
         X_cic_scaled = scaler_flow.transform(

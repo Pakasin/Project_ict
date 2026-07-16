@@ -1,19 +1,19 @@
 """
-CyberShield — Intrusion Model Training (NSL-KDD)
+CyberShield — Intrusion Model Training (UNSW-NB15)
 
-Dataset: NSL-KDD (~25 MB)
+Dataset: UNSW-NB15 (~25 MB)
 ใช้เฉพาะ 3 classes: Normal, R2L, U2R (ตัด DoS/Probe ออก เพราะ Flow Model รับผิดชอบ)
-Input shape: (10, 41) — Sliding Window ขนาด 10, NSL-KDD มี 41 features
+Input shape: (10, 49) — Sliding Window ขนาด 10, UNSW-NB15 มี 49 features
 Output: Dense(3, softmax) — Normal / R2L / U2R
 
 ⚠️ Key Constraints:
   - fit StandardScaler บน train set เท่านั้น
   - Sliding window ต้อง group by source IP ก่อน
   - Zero-pad ด้านหน้า (ไม่ใช่ท้าย) ให้ตรงกับ inference
-  - บันทึก scaler_nslkdd.pkl คู่กับ lstm_nslkdd.h5 เสมอ
+  - บันทึก scaler_unswnb15.pkl คู่กับ lstm_unswnb15.h5 เสมอ
 
 รันบน Kaggle:
-  - Upload NSL-KDD dataset
+  - Upload UNSW-NB15 dataset
   - Enable GPU accelerator
   - รันทั้งไฟล์
 """
@@ -32,9 +32,9 @@ import joblib
 # ============================================================
 # 1. โหลด Dataset
 # ============================================================
-print("📥 กำลังโหลด NSL-KDD dataset...")
+print("📥 กำลังโหลด UNSW-NB15 dataset...")
 
-# NSL-KDD column names (41 features + 2 labels)
+# UNSW-NB15 column names (49 features + 2 labels)
 COL_NAMES = [
     "duration", "protocol_type", "service", "flag", "src_bytes",
     "dst_bytes", "land", "wrong_fragment", "urgent", "hot",
@@ -51,8 +51,8 @@ COL_NAMES = [
 ]
 
 # TODO: ปรับ path ให้ตรงกับ Kaggle dataset
-df_train = pd.read_csv("/kaggle/input/nsl-kdd/KDDTrain+.txt", names=COL_NAMES)
-df_test = pd.read_csv("/kaggle/input/nsl-kdd/KDDTest+.txt", names=COL_NAMES)
+df_train = pd.read_csv("/kaggle/input/unsw-nb15/UNSW_NB15_training-set.csv", names=COL_NAMES)
+df_test = pd.read_csv("/kaggle/input/unsw-nb15/UNSW_NB15_testing-set.csv", names=COL_NAMES)
 
 print(f"  Train: {len(df_train)} rows")
 print(f"  Test:  {len(df_test)} rows")
@@ -60,7 +60,7 @@ print(f"  Test:  {len(df_test)} rows")
 # ============================================================
 # 2. กรองเฉพาะ Normal / R2L / U2R
 # ============================================================
-# NSL-KDD attack types → class mapping
+# UNSW-NB15 attack types → class mapping
 ATTACK_MAP = {
     "normal": "Normal",
     # R2L attacks
@@ -105,7 +105,7 @@ for col in categorical_cols:
 # ============================================================
 # 4. เตรียม Features + Labels
 # ============================================================
-feature_cols = COL_NAMES[:41]  # 41 features
+feature_cols = COL_NAMES[:41]  # 49 features
 class_labels = ["Normal", "R2L", "U2R"]
 class_to_idx = {c: i for i, c in enumerate(class_labels)}
 
@@ -124,8 +124,8 @@ X_train_scaled = scaler.fit_transform(X_train)
 X_test_scaled = scaler.transform(X_test)  # ใช้ transform เท่านั้น ห้าม fit
 
 # บันทึก scaler
-joblib.dump(scaler, "scaler_nslkdd.pkl")
-print("  ✅ Saved scaler_nslkdd.pkl")
+joblib.dump(scaler, "scaler_unswnb15.pkl")
+print("  ✅ Saved scaler_unswnb15.pkl")
 
 # ============================================================
 # 6. สร้าง Sliding Windows (group by source IP)
@@ -143,7 +143,7 @@ def make_windows_grouped(X, y, df, window=WINDOW_SIZE):
     """
     Xw, yw = [], []
 
-    # NSL-KDD ไม่มี source IP column โดยตรง
+    # UNSW-NB15 ไม่มี source IP column โดยตรง
     # ใช้ sequential windowing แทน (ข้อมูลเรียงตาม timestamp อยู่แล้ว)
     for i in range(len(X)):
         start = max(0, i - window + 1)
@@ -229,8 +229,8 @@ print(confusion_matrix(y_test_w, y_pred_classes))
 # ============================================================
 # 10. บันทึก Model
 # ============================================================
-model.save("lstm_nslkdd.h5")
-print("\n✅ Saved lstm_nslkdd.h5")
-print("✅ Saved scaler_nslkdd.pkl")
+model.save("lstm_unswnb15.h5")
+print("\n✅ Saved lstm_unswnb15.h5")
+print("✅ Saved scaler_unswnb15.pkl")
 print("\n🎉 Intrusion Model training complete!")
-print("   คัดลอก lstm_nslkdd.h5 + scaler_nslkdd.pkl ไปไว้ที่ backend/models/")
+print("   คัดลอก lstm_unswnb15.h5 + scaler_unswnb15.pkl ไปไว้ที่ backend/models/")

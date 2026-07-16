@@ -1,19 +1,19 @@
 """
-CyberShield — Flow Model Training (CICIDS 2017)
+CyberShield — Flow Model Training (CSE-CIC-IDS2018)
 
-Dataset: CICIDS 2017 Friday-WorkingHours-Afternoon-DDos.pcap_ISCX.csv (~600 MB)
+Dataset: CSE-CIC-IDS2018 CSE-CIC-IDS2018-AWS.csv (~600 MB)
 Classes: BENIGN, DoS, DDoS, PortScan, BruteForce (5 classes)
-Input shape: (10, 78) — Sliding Window ขนาด 10, CICIDS มี 78 features
+Input shape: (10, 78) — Sliding Window ขนาด 10, CSE-CIC-IDS2018 มี 78 features
 Output: Dense(5, softmax)
 
 ⚠️ Key Constraints:
   - fit StandardScaler บน train set เท่านั้น
   - Sliding window ต้อง group by Source IP
   - Zero-pad ด้านหน้า
-  - บันทึก scaler_cicids.pkl คู่กับ lstm_cicids.h5
+  - บันทึก scaler_csecicids2018.pkl คู่กับ lstm_csecicids2018.h5
 
 รันบน Kaggle:
-  - Upload CICIDS 2017 dataset
+  - Upload CSE-CIC-IDS2018 dataset
   - Enable GPU accelerator
   - ⚠️ Dataset ใหญ่ ~600MB — อาจต้องใช้ RAM สูง
 """
@@ -32,11 +32,11 @@ import joblib
 # ============================================================
 # 1. โหลด Dataset
 # ============================================================
-print("📥 กำลังโหลด CICIDS 2017 dataset...")
+print("📥 กำลังโหลด CSE-CIC-IDS2018 dataset...")
 
 # TODO: ปรับ path ให้ตรงกับ Kaggle dataset
 df = pd.read_csv(
-    "/kaggle/input/cicids2017/Friday-WorkingHours-Afternoon-DDos.pcap_ISCX.csv"
+    "/kaggle/input/cse-cic-ids2018/02-14-2018.csv"
 )
 
 # ลบช่องว่างออกจาก column names
@@ -138,8 +138,8 @@ scaler = StandardScaler()
 X_train_scaled = scaler.fit_transform(X_train)
 X_test_scaled = scaler.transform(X_test)
 
-joblib.dump(scaler, "scaler_cicids.pkl")
-print("  ✅ Saved scaler_cicids.pkl")
+joblib.dump(scaler, "scaler_csecicids2018.pkl")
+print("  ✅ Saved scaler_csecicids2018.pkl")
 
 # ============================================================
 # 7. สร้าง Sliding Windows
@@ -234,8 +234,8 @@ print(confusion_matrix(y_test_w, y_pred_classes))
 # ============================================================
 # 11. บันทึก Model
 # ============================================================
-model.save("lstm_cicids.h5")
-print("\n✅ Saved lstm_cicids.h5")
-print("✅ Saved scaler_cicids.pkl")
+model.save("lstm_csecicids2018.h5")
+print("\n✅ Saved lstm_csecicids2018.h5")
+print("✅ Saved scaler_csecicids2018.pkl")
 print("\n🎉 Flow Model training complete!")
-print("   คัดลอก lstm_cicids.h5 + scaler_cicids.pkl ไปไว้ที่ backend/models/")
+print("   คัดลอก lstm_csecicids2018.h5 + scaler_csecicids2018.pkl ไปไว้ที่ backend/models/")

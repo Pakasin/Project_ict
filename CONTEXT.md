@@ -7,7 +7,7 @@ Portfolio project: real-time network attack detection using 3 specialized LSTM m
 ### Sensors
 
 **Network Sensor**:
-A `nfstream`-based Python process that captures live network flows from a network interface and extracts flow-level features (byte counts, durations, flag counts, etc.) compatible with NSL-KDD and CICIDS 2017 feature schemas.
+A `nfstream`-based Python process that captures live network flows from a network interface and extracts flow-level features (byte counts, durations, flag counts, etc.) compatible with UNSW-NB15 and CSE-CIC-IDS2018 feature schemas.
 _Avoid_: packet capture, sniffer, tap
 
 **HTTP Sensor**:
@@ -16,16 +16,16 @@ _Avoid_: proxy, web tap, request interceptor
 
 ### Models
 
-**Intrusion Model (NSL-KDD)**:
-LSTM model trained on NSL-KDD dataset. Specializes in R2L (Remote-to-Local) and U2R (User-to-Root) attack classes. Input: Network Sensor features.
-_Avoid_: network model, NSL model
+**Intrusion Model (UNSW-NB15)**:
+LSTM model trained on UNSW-NB15 dataset. Specializes in R2L (Remote-to-Local) and U2R (User-to-Root) attack classes. Input: Network Sensor features.
+_Avoid_: network model, UNSW model
 
-**Flow Model (CICIDS)**:
-LSTM model trained on CICIDS 2017 Friday-Afternoon subset. Specializes in DDoS, DoS, PortScan, and BruteForce classes. Input: Network Sensor features.
-_Avoid_: CICIDS model, traffic model
+**Flow Model (CSE-CIC-IDS2018)**:
+LSTM model trained on CSE-CIC-IDS2018 Friday-Afternoon subset. Specializes in DDoS, DoS, PortScan, and BruteForce classes. Input: Network Sensor features.
+_Avoid_: CSE-CIC-IDS2018 model, traffic model
 
 **Injection Model (SQLi)**:
-LSTM model trained on Kaggle SQL Injection dataset. Binary classifier: Normal vs SQL Injection. Input: HTTP Sensor request text.
+LSTM model trained on SecLists SQLi dataset. Binary classifier: Normal vs SQL Injection. Input: HTTP Sensor request text.
 _Avoid_: SQLi model, text model
 
 ### Attack Classes
@@ -50,7 +50,7 @@ _Avoid_: SQLi model, text model
 
 **Flow**: A completed network connection record produced by the Network Sensor. One step in a Sliding Window. Partial windows (< 10 flows for a new source IP) are zero-padded — model is trained on padded samples to handle cold-start correctly.
 
-**Scaler**: Per-model `sklearn` StandardScaler saved as `.pkl` alongside `.h5`. Fit on training data only. Loaded at FastAPI startup and applied to all incoming features before LSTM inference. Files: `scaler_nslkdd.pkl`, `scaler_cicids.pkl` (SQLi uses Embedding layer, no scaler needed).
+**Scaler**: Per-model `sklearn` StandardScaler saved as `.pkl` alongside `.h5`. Fit on training data only. Loaded at FastAPI startup and applied to all incoming features before LSTM inference. Files: `scaler_unswnb15.pkl`, `scaler_csecicids2018.pkl` (SQLi uses Embedding layer, no scaler needed).
 
 **Sliding Window**: A rolling buffer of the 10 most recent Flows grouped by source IP. Forms one LSTM input sample of shape `(10, features)`. Grouping by source IP preserves per-attacker context — attack patterns (port scan, brute-force sweep) are detectable because they originate from one IP across consecutive flows.
 

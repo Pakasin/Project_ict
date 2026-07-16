@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 CyberShield — real-time network attack detection using 3 specialized LSTM models fed by live traffic sensors. Runs on a dedicated Linux VM on a home LAN.
 
-- `CONTEXT.md` — canonical terminology glossary. Use terms defined there (e.g. "Intrusion Model" not "NSL model", "Flow" not "packet").
+- `CONTEXT.md` — canonical terminology glossary. Use terms defined there (e.g. "Intrusion Model" not "UNSW model", "Flow" not "packet").
 - `IMPLEMENTATION_GUIDE.md` — full architecture reference with code skeletons for every component.
 
 ## Architecture
@@ -15,8 +15,8 @@ Three models, each owning distinct attack classes — never overlap:
 
 | Model | Sensor | Attack Classes | Artifacts |
 |---|---|---|---|
-| Intrusion Model | nfstream (Network Sensor) | R2L, U2R | `lstm_nslkdd.h5` + `scaler_nslkdd.pkl` |
-| Flow Model | nfstream (Network Sensor) | DoS, DDoS, PortScan, BruteForce | `lstm_cicids.h5` + `scaler_cicids.pkl` |
+| Intrusion Model | nfstream (Network Sensor) | R2L, U2R | `lstm_unswnb15.h5` + `scaler_unswnb15.pkl` |
+| Flow Model | nfstream (Network Sensor) | DoS, DDoS, PortScan, BruteForce | `lstm_csecicids2018.h5` + `scaler_csecicids2018.pkl` |
 | Injection Model | mitmproxy (HTTP Sensor) | SQL Injection | `lstm_sqli.h5` + `tokenizer_sqli.pkl` |
 
 Data flow:
@@ -33,8 +33,8 @@ Key constraints:
 ## LSTM Input Shape
 
 Network models use **Sliding Window** of shape `(10, features)` grouped by source IP:
-- NSL-KDD: `(10, 41)` → 3-class softmax (Normal / R2L / U2R)
-- CICIDS: `(10, 78)` → 5-class softmax (BENIGN / DoS / DDoS / PortScan / BruteForce)
+- UNSW-NB15: `(10, 49)` → 3-class softmax (Normal / R2L / U2R)
+- CSE-CIC-IDS2018: `(10, 78)` → 5-class softmax (BENIGN / DoS / DDoS / PortScan / BruteForce)
 - Windows shorter than 10 flows are **zero-padded at the front** — training data includes padded samples for cold-start correctness.
 - `StandardScaler` is fit on train set only, saved as `.pkl`, loaded at FastAPI startup alongside `.h5`.
 
