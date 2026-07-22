@@ -21,7 +21,7 @@ LSTM model trained on UNSW-NB15 dataset. Specializes in R2L (Remote-to-Local) an
 _Avoid_: network model, UNSW model
 
 **Flow Model (CSE-CIC-IDS2018)**:
-LSTM model trained on CSE-CIC-IDS2018 Friday-Afternoon subset. Specializes in DDoS, DoS, PortScan, and BruteForce classes. Input: Network Sensor features.
+LSTM model trained on CSE-CIC-IDS2018 (using 02-14, 02-16, 02-21 subsets). Specializes in DDoS, DoS, and BruteForce classes. Input: Network Sensor features.
 _Avoid_: CSE-CIC-IDS2018 model, traffic model
 
 **Injection Model (SQLi)**:
@@ -34,7 +34,7 @@ _Avoid_: SQLi model, text model
 
 **U2R**: User-to-Root attack — privilege escalation from local user to root. Detected by Intrusion Model only.
 
-**DDoS / BruteForce**: Volumetric and credential-stuffing attacks. Detected by Flow Model only.
+**DDoS / DoS / BruteForce**: Volumetric and credential-stuffing attacks. Detected by Flow Model only.
 
 **SQL Injection**: Malicious SQL embedded in HTTP request. Detected by Injection Model only.
 
@@ -52,7 +52,7 @@ _Avoid_: SQLi model, text model
 
 **Scaler**: Per-model `sklearn` StandardScaler saved as `.pkl` alongside `.h5`. Fit on training data only. Loaded at FastAPI startup and applied to all incoming features before LSTM inference. Files: `scaler_unswnb15.pkl`, `scaler_csecicids2018.pkl` (SQLi uses Embedding layer, no scaler needed).
 
-**Sliding Window**: A rolling buffer of the 10 most recent Flows grouped by source IP. Forms one LSTM input sample of shape `(10, features)`. Grouping by source IP preserves per-attacker context — attack patterns (port scan, brute-force sweep) are detectable because they originate from one IP across consecutive flows.
+**Sliding Window**: A rolling buffer of the 10 most recent Flows grouped by source IP (in theory). Forms one LSTM input sample of shape `(10, features)`. Grouping by source IP preserves per-attacker context. *(Note: see Known Limitations regarding Flow Model training)*
 
 **Prediction Event**: A single detection result emitted after a model scores a Flow or HTTP request. Contains: model name, attack class, confidence score, source IP, timestamp.
 
@@ -74,3 +74,10 @@ _Avoid_: SQLi model, text model
 > Expert: "Depends on the traffic type. If it's a network flow with R2L or U2R signatures, Intrusion Model. If it's high-volume DDoS or a brute-force sweep, Flow Model. If it's an HTTP request with suspicious query params, Injection Model."
 > Dev: "What if nfstream sees a DoS flow?"
 > Expert: "Flow Model owns DoS. Intrusion Model doesn't see DoS — its role is R2L and U2R only."
+
+## Known Limitations
+
+**Flow Model (CSE-CIC-IDS2018)**:
+1. **Dataset Selection**: Trained on 3 specific days (Feb 14, 16, 21, 2018) rather than the intended "Friday-Afternoon" slice.
+2. **Missing Classes**: The trained model only covers 4 classes (`BENIGN`, `DoS`, `DDoS`, `BruteForce`). `PortScan` was omitted because it is completely absent from the dataset slice used (unlike CIC-IDS2017).
+3. **Sequence Grouping**: The raw CSE-CIC-IDS2018 dataset lacked `Source IP` attributes. Therefore, instead of grouping sequences by attacker IP as intended for the sliding window, a chronological split by attack subtype was used for model training. The production sensor MUST construct the sliding window using the exact same method as training (chronological). It must not attempt to use group-by-Source-IP even if the Network Sensor provides it, as this would cause a severe train/serve mismatch, invalidating all reported performance metrics. If IP-based grouping is desired in the future, a new dataset containing Source IPs must be acquired to retrain the model from scratch.
