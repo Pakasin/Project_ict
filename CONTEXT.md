@@ -16,16 +16,16 @@ _Avoid_: proxy, web tap, request interceptor
 
 ### Models
 
-**Intrusion Model (UNSW-NB15)**:
-LSTM model trained on UNSW-NB15 dataset. Specializes in R2L (Remote-to-Local) and U2R (User-to-Root) attack classes. Input: Network Sensor features.
-_Avoid_: network model, UNSW model
+**Intrusion Model (NSL-KDD)** — 🔄 in progress:
+LSTM model trained on **NSL-KDD** (switched from UNSW-NB15 — see Known Limitations for why). Specializes in R2L (Remote-to-Local) and U2R (User-to-Root) attack classes only (DoS/Probe excluded — Flow Model's responsibility). Input: Network Sensor features, 41 features (NSL-KDD schema, not 49/UNSW-NB15).
+_Avoid_: network model, UNSW model, UNSW-NB15 model
 
-**Flow Model (CSE-CIC-IDS2018)**:
-LSTM model trained on CSE-CIC-IDS2018 (using 02-14, 02-16, 02-21 subsets). Specializes in DDoS, DoS, and BruteForce classes. Input: Network Sensor features.
+**Flow Model (CSE-CIC-IDS2018)** — ✅ complete:
+LSTM model trained on CSE-CIC-IDS2018 (using 02-14, 02-16, 02-21 subsets). Specializes in DDoS, DoS, and BruteForce classes (4-class: BENIGN/DoS/DDoS/BruteForce — PortScan excluded, absent from dataset). Input: Network Sensor features. Test results: Accuracy/Precision/Recall/F1 all ≈ 0.993.
 _Avoid_: CSE-CIC-IDS2018 model, traffic model
 
-**Injection Model (SQLi)**:
-LSTM model trained on SecLists SQLi dataset. Binary classifier: Normal vs SQL Injection. Input: HTTP Sensor request text.
+**Injection Model (SQLi)** — ⏳ not started:
+LSTM model trained on SecLists SQLi dataset. Binary classifier: Normal vs SQL Injection. Input: HTTP Sensor request text. `train_sqli.py` not yet audited — per lessons from the other two models, verify actual label/data format before trusting existing docstrings/comments.
 _Avoid_: SQLi model, text model
 
 ### Attack Classes
@@ -50,7 +50,7 @@ _Avoid_: SQLi model, text model
 
 **Flow**: A completed network connection record produced by the Network Sensor. One step in a Sliding Window. Partial windows (< 10 flows for a new source IP) are zero-padded — model is trained on padded samples to handle cold-start correctly.
 
-**Scaler**: Per-model `sklearn` StandardScaler saved as `.pkl` alongside `.h5`. Fit on training data only. Loaded at FastAPI startup and applied to all incoming features before LSTM inference. Files: `scaler_unswnb15.pkl`, `scaler_csecicids2018.pkl` (SQLi uses Embedding layer, no scaler needed).
+**Scaler**: Per-model `sklearn` StandardScaler saved as `.pkl` alongside `.h5`. Fit on training data only. Loaded at FastAPI startup and applied to all incoming features before LSTM inference. Files: `scaler_nslkdd.pkl`, `scaler_csecicids2018.pkl` (SQLi uses Embedding layer, no scaler needed).
 
 **Sliding Window**: A rolling buffer of the 10 most recent Flows grouped by source IP (in theory). Forms one LSTM input sample of shape `(10, features)`. Grouping by source IP preserves per-attacker context. *(Note: see Known Limitations regarding Flow Model training)*
 
@@ -81,3 +81,10 @@ _Avoid_: SQLi model, text model
 1. **Dataset Selection**: Trained on 3 specific days (Feb 14, 16, 21, 2018) rather than the intended "Friday-Afternoon" slice.
 2. **Missing Classes**: The trained model only covers 4 classes (`BENIGN`, `DoS`, `DDoS`, `BruteForce`). `PortScan` was omitted because it is completely absent from the dataset slice used (unlike CIC-IDS2017).
 3. **Sequence Grouping**: The raw CSE-CIC-IDS2018 dataset lacked `Source IP` attributes. Therefore, instead of grouping sequences by attacker IP as intended for the sliding window, a chronological split by attack subtype was used for model training. The production sensor MUST construct the sliding window using the exact same method as training (chronological). It must not attempt to use group-by-Source-IP even if the Network Sensor provides it, as this would cause a severe train/serve mismatch, invalidating all reported performance metrics. If IP-based grouping is desired in the future, a new dataset containing Source IPs must be acquired to retrain the model from scratch.
+
+**Intrusion Model (NSL-KDD)** — 🔄 in progress:
+1. **Dataset Switch (UNSW-NB15 → NSL-KDD)**: The original `train_unswnb15.py` script's `COL_NAMES` (41-feature schema) and `ATTACK_MAP` were copied wholesale from NSL-KDD/KDD99, not UNSW-NB15 (which has 45 differently-named columns and only 9 `attack_cat` values: Normal, Generic, Exploits, Fuzzers, DoS, Reconnaissance, Analysis, Backdoor, Shellcode, Worms — none of which map cleanly to `R2L`/`U2R`, terms that only exist in NSL-KDD/KDD99). Rather than force an inaccurate reinterpretation, the dataset was switched to real NSL-KDD, which the existing script already matched.
+2. **Missing Source IP**: Same as Flow Model — NSL-KDD has no Source IP column, so sequential/chronological windowing is used instead of group-by-IP. The same train/serve mismatch warning applies once this model reaches production: sensor windowing must match training windowing exactly.
+3. **Severe class imbalance**: Train set — Normal 67,343 / R2L 995 / U2R 52 (U2R = 0.04% of train). Computed `class_weight`: `{Normal: 0.34, R2L: 22.91, U2R: 438.40}`. Plan is to try class_weight alone first; only add oversampling (e.g. SMOTE) if recall proves inadequate — avoid premature complexity.
+4. **R2L test set has intentional novel subtypes**: `KDDTest+` contains R2L attack subtypes never seen in `KDDTrain+` (995 train vs. 2,887 test rows) — a deliberate NSL-KDD design choice to test generalization to unseen attacks, not a data leakage bug (contrast with the Flow Model's DoS leakage issue, which *was* a bug). R2L test recall is expected to fall short of 90%+ regardless of model quality; do not misdiagnose this as a training defect.
+5. **Status**: Preprocessing complete (`X_train_w`: (68390, 10, 41), `X_test_w`: (12665, 10, 41), class weights computed). Model build/train/evaluate not yet done. Must verify the 80/20 train/val split contains at least one U2R window before training — with only ~52 raw U2R rows, a naive split could zero it out; use stratified split if so.

@@ -13,11 +13,11 @@ CyberShield — real-time network attack detection using 3 specialized LSTM mode
 
 Three models, each owning distinct attack classes — never overlap:
 
-| Model | Sensor | Attack Classes | Artifacts |
-|---|---|---|---|
-| Intrusion Model | nfstream (Network Sensor) | R2L, U2R | `lstm_unswnb15.h5` + `scaler_unswnb15.pkl` |
-| Flow Model | nfstream (Network Sensor) | DoS, DDoS, PortScan, BruteForce | `lstm_csecicids2018.h5` + `scaler_csecicids2018.pkl` |
-| Injection Model | mitmproxy (HTTP Sensor) | SQL Injection | `lstm_sqli.h5` + `tokenizer_sqli.pkl` |
+| Model | Sensor | Attack Classes | Artifacts | Status |
+|---|---|---|---|---|
+| Intrusion Model | nfstream (Network Sensor) | R2L, U2R | `lstm_nslkdd.h5` + `scaler_nslkdd.pkl` | 🔄 in progress (dataset switched UNSW-NB15 → NSL-KDD, see CONTEXT.md) |
+| Flow Model | nfstream (Network Sensor) | DoS, DDoS, BruteForce | `best.keras` + `scaler_csecicids2018.pkl` | ✅ complete (4-class, PortScan excluded — absent from dataset) |
+| Injection Model | mitmproxy (HTTP Sensor) | SQL Injection | `lstm_sqli.h5` + `tokenizer_sqli.pkl` | ⏳ not started |
 
 Data flow:
 ```
@@ -32,9 +32,9 @@ Key constraints:
 
 ## LSTM Input Shape
 
-Network models use **Sliding Window** of shape `(10, features)` grouped by source IP:
-- UNSW-NB15: `(10, 49)` → 3-class softmax (Normal / R2L / U2R)
-- CSE-CIC-IDS2018: `(10, 78)` → 5-class softmax (BENIGN / DoS / DDoS / PortScan / BruteForce)
+Network models use **Sliding Window** of shape `(10, features)`. Neither dataset has a Source IP column — both use chronological/sequential windowing (grouped by attack subtype at train time), NOT group-by-source-IP. See CONTEXT.md Known Limitations for the train/serve mismatch this implies.
+- NSL-KDD (Intrusion Model): `(10, 41)` → 3-class softmax (Normal / R2L / U2R)
+- CSE-CIC-IDS2018 (Flow Model): `(10, 78)` → 4-class softmax (BENIGN / DoS / DDoS / BruteForce — PortScan excluded, absent from dataset)
 - Windows shorter than 10 flows are **zero-padded at the front** — training data includes padded samples for cold-start correctness.
 - `StandardScaler` is fit on train set only, saved as `.pkl`, loaded at FastAPI startup alongside `.h5`.
 
