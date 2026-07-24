@@ -15,7 +15,7 @@ Three models, each owning distinct attack classes — never overlap:
 
 | Model | Sensor | Attack Classes | Artifacts | Status |
 |---|---|---|---|---|
-| Intrusion Model | nfstream (Network Sensor) | R2L, U2R | `lstm_nslkdd.h5` + `scaler_nslkdd.pkl` | 🔄 in progress (dataset switched UNSW-NB15 → NSL-KDD, see CONTEXT.md) |
+| Intrusion Model | nfstream (Network Sensor) | R2L, U2R | `best_nslkdd_smote.keras` + `scaler_nslkdd.pkl` + `label_encoders_nslkdd.pkl` | ✅ complete (dataset switched UNSW-NB15 → NSL-KDD, SMOTE-balanced, see CONTEXT.md) |
 | Flow Model | nfstream (Network Sensor) | DoS, DDoS, BruteForce | `best.keras` + `scaler_csecicids2018.pkl` | ✅ complete (4-class, PortScan excluded — absent from dataset) |
 | Injection Model | mitmproxy (HTTP Sensor) | SQL Injection | `lstm_sqli.h5` + `tokenizer_sqli.pkl` | ⏳ not started |
 
