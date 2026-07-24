@@ -76,3 +76,11 @@ eslintcache
 .Trashes
 ehthumbs.db
 Thumbs.db
+
+# Agent Customizations
+.agents/
+.claude/
+
+# Local database
+*.db
+
