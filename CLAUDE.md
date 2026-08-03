@@ -16,7 +16,7 @@ Three models, each owning distinct attack classes — never overlap:
 | Model | Sensor | Attack Classes | Artifacts | Status |
 |---|---|---|---|---|
 | Intrusion Model | nfstream (Network Sensor) | R2L, U2R | `best_nslkdd_smote.keras` + `scaler_nslkdd.pkl` + `label_encoders_nslkdd.pkl` | ✅ complete (dataset switched UNSW-NB15 → NSL-KDD, SMOTE-balanced, see CONTEXT.md) |
-| Flow Model | nfstream (Network Sensor) | DoS, DDoS, BruteForce | `best.keras` + `scaler_csecicids2018.pkl` | ✅ complete (4-class, PortScan excluded — absent from dataset) |
+| Flow Model | nfstream (Network Sensor) | DoS, DDoS, BruteForce | `best_GRU.keras` + `scaler_csecicids2018.pkl` + `feature_cols.json` + `trained_feature_cols.json` | ✅ complete (4-class, PortScan excluded — absent from dataset) |
 | Injection Model | mitmproxy (HTTP Sensor) | SQL Injection | `lstm_sqli.h5` + `tokenizer_sqli.pkl` | ⏳ not started |
 
 Data flow:
@@ -32,11 +32,16 @@ Key constraints:
 
 ## LSTM Input Shape
 
-Network models use **Sliding Window** of shape `(10, features)`. Neither dataset has a Source IP column — both use chronological/sequential windowing (grouped by attack subtype at train time), NOT group-by-source-IP. See CONTEXT.md Known Limitations for the train/serve mismatch this implies.
+Network models use **Sliding Window** of shape `(10, features)`. Neither dataset has a Source IP column — both use chronological windowing, NOT group-by-source-IP. Windows are ordered by time only, with **no grouping by attack subtype** — grouping by the label being predicted was a train/serve mismatch and has been removed. See CONTEXT.md Known Limitations.
 - NSL-KDD (Intrusion Model): `(10, 41)` → 3-class softmax (Normal / R2L / U2R)
-- CSE-CIC-IDS2018 (Flow Model): `(10, 78)` → 4-class softmax (BENIGN / DoS / DDoS / BruteForce — PortScan excluded, absent from dataset)
-- Windows shorter than 10 flows are **zero-padded at the front** — training data includes padded samples for cold-start correctness.
-- `StandardScaler` is fit on train set only, saved as `.pkl`, loaded at FastAPI startup alongside `.h5`.
+- CSE-CIC-IDS2018 (Flow Model): `(10, 71)` → 4-class softmax (BENIGN / DoS / DDoS / BruteForce — PortScan excluded, absent from dataset)
+- Windows shorter than 10 flows are zero-padded at the front, but **incomplete windows were dropped at train time** — the model has never seen padding. Serving must therefore return no prediction until 10 flows have accumulated (skip the first 9 after sensor start). No `Masking` layer: left-side padding is incompatible with the cuDNN kernel.
+- `StandardScaler` is fit on train set only, saved as `.pkl`, loaded at FastAPI startup.
+
+**Flow Model feature counts differ on purpose — 78 vs 71:**
+- `feature_cols.json` (78) = raw column order the scaler was fit on.
+- `trained_feature_cols.json` (71) = what the model actually takes, after dropping the 7 fingerprint features in `FINGERPRINT_FEATURES` (TCP init window, header lengths, MSS, `Dst Port`, `Protocol`). Those encode *which host sent the flow*, not attack behaviour, and scored a spurious 0.9999 f1_macro; the honest 71-feature number is 0.9534.
+- Order is fixed: **scale with all 78, then slice to 71** — never slice first, or values land in the wrong columns with no error raised.
 
 SQLi model: Embedding layer, no scaler. Uses `tokenizer_sqli.pkl` (Keras Tokenizer, vocab=10000, maxlen=200).
 
