@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import ThreatInspectModal from '../components/ThreatInspectModal'
+import InfoHelp from '../components/InfoHelp'
 import { playSound } from '../utils/sound'
 import { useApp } from '../context/AppContext'
 
@@ -143,7 +144,7 @@ export default function Logs() {
         </label>
       </div>
 
-      <div className="card blueprint elev-sm" style={{ padding: 'var(--space-4)' }}>
+      <div className="card elev-sm" style={{ padding: 'var(--space-4)' }}>
         {loading ? (
           <div className="loading-spinner"><div className="spinner"></div></div>
         ) : displayLogs.length === 0 ? (
@@ -158,11 +159,11 @@ export default function Logs() {
               <table className="table">
                 <thead>
                   <tr>
-                    <th data-sortable onClick={() => handleSort('id')}>{t.logs.colRef}{sortIndicator('id')}</th>
+                    <th data-sortable onClick={() => handleSort('id')}>{t.logs.colRef} <InfoHelp id="refId" />{sortIndicator('id')}</th>
                     <th data-sortable onClick={() => handleSort('model_name')}>{t.logs.colModel}{sortIndicator('model_name')}</th>
                     <th data-sortable onClick={() => handleSort('attack_class')}>{t.logs.colAttack}{sortIndicator('attack_class')}</th>
                     <th data-sortable onClick={() => handleSort('confidence')}>{t.logs.colConfidence}{sortIndicator('confidence')}</th>
-                    <th data-sortable onClick={() => handleSort('source_ip')}>{t.logs.colSource}{sortIndicator('source_ip')}</th>
+                    <th data-sortable onClick={() => handleSort('source_ip')}>{t.logs.colSource} <InfoHelp id="sourceIp" />{sortIndicator('source_ip')}</th>
                     <th data-sortable onClick={() => handleSort('timestamp')}>{t.logs.colTimestamp}{sortIndicator('timestamp')}</th>
                     <th style={{ textAlign: 'center' }}>{t.logs.colAlert}</th>
                   </tr>

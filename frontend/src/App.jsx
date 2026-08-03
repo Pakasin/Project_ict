@@ -9,6 +9,7 @@ import Incidents from './pages/Incidents'
 import Settings from './pages/Settings'
 import { playSound } from './utils/sound'
 import { AppProvider, useApp } from './context/AppContext'
+import InfoHelp from './components/InfoHelp'
 
 const ICONS = {
   dashboard: "M3 3h7v7H3V3zm11 0h7v7h-7V3zM3 14h7v7H3v-7zm11 0h7v7h-7v-7z",
@@ -31,12 +32,26 @@ function AppShell({ auth, onLogout }) {
   const { t, previewAsGeneral, setPreviewAsGeneral, isAdminActual } = useApp()
   const [defcon, setDefcon] = useState(5)
   const [activeAlertsCount, setActiveAlertsCount] = useState(0)
+  const [viewMenuOpen, setViewMenuOpen] = useState(false)
   const wsRef = useRef(null)
+  const viewSwitcherRef = useRef(null)
 
   useEffect(() => {
     connectGlobalWebSocket()
     return () => { if (wsRef.current) wsRef.current.close() }
   }, [])
+
+  useEffect(() => {
+    if (!viewMenuOpen) return
+    function onDocClick(e) { if (!viewSwitcherRef.current?.contains(e.target)) setViewMenuOpen(false) }
+    function onKeyDown(e) { if (e.key === 'Escape') setViewMenuOpen(false) }
+    document.addEventListener('mousedown', onDocClick)
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('mousedown', onDocClick)
+      document.removeEventListener('keydown', onKeyDown)
+    }
+  }, [viewMenuOpen])
 
   function connectGlobalWebSocket() {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
@@ -90,7 +105,7 @@ function AppShell({ auth, onLogout }) {
           <div className={`defcon-status-bar defcon-${defcon}`}>
             <span className="defcon-pulse-dot"></span>
             <div className="defcon-text">
-              <span className="defcon-level mono">DEFCON {defcon}</span>
+              <span className="defcon-level mono">DEFCON {defcon} <InfoHelp id="defcon" /></span>
               <span className="defcon-desc">
                 {defcon === 5 ? t.defconSub :
                  defcon === 4 ? t.defconSub :
@@ -122,6 +137,32 @@ function AppShell({ auth, onLogout }) {
             <span className="nav-icon"><Icon d={ICONS.settings} /></span>{t.nav.settings}
           </NavLink>
         </nav>
+
+        {isAdminActual && (
+          <div className="view-switcher" ref={viewSwitcherRef}>
+            <div className="view-switcher-trigger" onClick={() => { playSound('click'); setViewMenuOpen((v) => !v) }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                <Icon d={previewAsGeneral ? "M12 8a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM6 21v-2a6 6 0 0 1 12 0v2" : "M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Zm-3-10 2 2 4-4"} size={15} />
+                <span className="view-switcher-label">{previewAsGeneral ? t.settings.roleGeneralOpt : t.settings.roleAdminOpt}</span>
+                <InfoHelp id="currentViewHelp" />
+              </div>
+              <Icon d="m7 15 5 5 5-5M7 9l5-5 5 5" size={13} />
+            </div>
+            {viewMenuOpen && (
+              <div className="view-switcher-menu">
+                <div className="view-switcher-heading">{t.settings.roleLabel}</div>
+                <div className="view-switcher-option" onClick={() => { playSound('click'); setPreviewAsGeneral(false); setViewMenuOpen(false) }}>
+                  <span>{t.settings.roleAdminOpt}</span>
+                  {!previewAsGeneral && <Icon d="M20 6 9 17l-5-5" size={14} />}
+                </div>
+                <div className="view-switcher-option" onClick={() => { playSound('click'); setPreviewAsGeneral(true); setViewMenuOpen(false) }}>
+                  <span>{t.settings.roleGeneralOpt}</span>
+                  {previewAsGeneral && <Icon d="M20 6 9 17l-5-5" size={14} />}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         <div className="sidebar-footer">
           <div className="sidebar-user">

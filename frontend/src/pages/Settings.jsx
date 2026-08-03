@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { isSoundEnabled, setSoundEnabled as saveSoundEnabled, getVolume, setVolume as saveVolume, playSound } from '../utils/sound';
 import { useApp } from '../context/AppContext';
+import InfoHelp from '../components/InfoHelp';
 
 export default function Settings() {
   const { t, lang, setLang, theme, setTheme, auth, updateProfile, previewAsGeneral, setPreviewAsGeneral, isAdminActual, isGeneralView } = useApp();
@@ -181,6 +182,7 @@ export default function Settings() {
               <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap', paddingTop: 'var(--space-3)' }}>
                 <button className="btn btn-secondary" onClick={() => playSound('alert')} disabled={!soundOn}>{t.settings.testSiren}</button>
                 <button className="btn btn-secondary" onClick={() => playSound('critical')} disabled={!soundOn}>{t.settings.testPulse}</button>
+                <InfoHelp id="defcon1Sound" />
                 <button className="btn btn-secondary" onClick={() => playSound('click')} disabled={!soundOn}>{t.settings.testClick}</button>
                 <button className="btn btn-secondary" onClick={() => playSound('success')} disabled={!soundOn}>{t.settings.testChime}</button>
               </div>
@@ -191,14 +193,14 @@ export default function Settings() {
             <div>
               <h3 style={{ margin: '0 0 var(--space-3) 0' }}>{t.settings.displayCardTitle}</h3>
               <div className="settings-row">
-                <div><div className="settings-row-label">{t.settings.densityLabel}</div><div className="settings-row-desc text-muted">{t.settings.densityDesc}</div></div>
+                <div><div className="settings-row-label">{t.settings.densityLabel} <InfoHelp id="compactModeHelp" /></div><div className="settings-row-desc text-muted">{t.settings.densityDesc}</div></div>
                 <div className="seg">
                   <label className="seg-opt"><input type="radio" name="density" checked={compactMode} onChange={() => handleCompactToggle(true)} disabled={isGeneralView} />{t.settings.on}</label>
                   <label className="seg-opt"><input type="radio" name="density" checked={!compactMode} onChange={() => handleCompactToggle(false)} disabled={isGeneralView} />{t.settings.off}</label>
                 </div>
               </div>
               <div className="settings-row">
-                <div><div className="settings-row-label">{t.settings.refreshLabel}</div><div className="settings-row-desc text-muted">{t.settings.refreshDesc}</div></div>
+                <div><div className="settings-row-label">{t.settings.refreshLabel} <InfoHelp id="refreshIntervalHelp" /></div><div className="settings-row-desc text-muted">{t.settings.refreshDesc}</div></div>
                 <select className="input" style={{ width: 200 }} value={refreshInterval} onChange={handleRefreshChange} disabled={isGeneralView}>
                   <option value="5">{t.settings.every5}</option>
                   <option value="10">{t.settings.every10}</option>
@@ -213,7 +215,7 @@ export default function Settings() {
             <div>
               <h3 style={{ margin: '0 0 var(--space-3) 0' }}>{t.settings.roleCardTitle}</h3>
               <div className="settings-row">
-                <div><div className="settings-row-label">{t.settings.roleLabel}</div><div className="settings-row-desc text-muted">{t.settings.roleDesc}</div></div>
+                <div><div className="settings-row-label">{t.settings.roleLabel} <InfoHelp id="currentViewHelp" /></div><div className="settings-row-desc text-muted">{t.settings.roleDesc}</div></div>
                 <div className="seg">
                   <label className="seg-opt"><input type="radio" name="rolePreview" checked={!previewAsGeneral} onChange={() => setPreviewAsGeneral(false)} />{t.settings.roleAdminOpt}</label>
                   <label className="seg-opt"><input type="radio" name="rolePreview" checked={previewAsGeneral} onChange={() => setPreviewAsGeneral(true)} />{t.settings.roleGeneralOpt}</label>
@@ -236,8 +238,11 @@ export default function Settings() {
           {category === 'firewall' && (
             <div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-3)' }}>
-                <h3 style={{ margin: 0 }}>{t.settings.firewallTitle}</h3>
-                <button className="btn btn-secondary" onClick={addDemoBlockedIp} disabled={isGeneralView}>{t.settings.addBlockBtn}</button>
+                <h3 style={{ margin: 0 }}>{t.settings.firewallTitle} <InfoHelp id="firewallHelp" /> <InfoHelp id="quarantineIp" /></h3>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                  <button className="btn btn-secondary" onClick={addDemoBlockedIp} disabled={isGeneralView}>{t.settings.addBlockBtn}</button>
+                  <InfoHelp id="simulateBlockHelp" />
+                </span>
               </div>
               <div className="quarantine-list">
                 {blockedIps.length === 0 ? (
@@ -247,6 +252,7 @@ export default function Settings() {
                     <div key={ip} className="tag tag-outline quarantine-tag">
                       <span className="mono">{ip}</span>
                       <button className="btn btn-ghost" style={{ padding: 0, fontSize: 11 }} onClick={() => unblockIp(ip)} disabled={isGeneralView}>{t.settings.unblockBtn}</button>
+                      <InfoHelp id="unblockHelp" />
                     </div>
                   ))
                 )}

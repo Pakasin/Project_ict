@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from 'react'
 import { CyberRadar, ActivitySparkline } from '../components/LiveRadar'
 import ThreatInspectModal from '../components/ThreatInspectModal'
+import InfoHelp from '../components/InfoHelp'
 import { playSound } from '../utils/sound'
 import { useApp } from '../context/AppContext'
 
@@ -12,8 +13,10 @@ const STAT_ICONS = {
   sqli: "M4 6l6 6-6 6M14 18h6"
 }
 
+const STAT_HELP = { packets: null, alerts: 'highConfidence', intrusion: 'r2lu2r', flow: 'ddos', sqli: 'sqli' }
+
 export default function Dashboard({ activeAlertsCount = 0 }) {
-  const { t } = useApp()
+  const { t, isGeneralView } = useApp()
   const [events, setEvents] = useState([])
   const [connected, setConnected] = useState(false)
   const [selectedEvent, setSelectedEvent] = useState(null)
@@ -85,40 +88,124 @@ export default function Dashboard({ activeAlertsCount = 0 }) {
       </div>
 
       <div className="dashboard-hero-grid">
-        <div className="card blueprint elev-sm radar-card">
-          <i className="corner tl"></i><i className="corner tr"></i><i className="corner bl"></i><i className="corner br"></i>
+        <div className="card elev-sm radar-card">
           <CyberRadar activeAlertsCount={activeAlertsCount || stats.alerts} />
-          <div className="tag tag-neutral" style={{ justifyContent: 'center' }}>{t.dash.radarStatus}</div>
+          <div className="tag tag-neutral" style={{ justifyContent: 'center' }}>{t.dash.radarStatus} <InfoHelp id="radar" /></div>
         </div>
 
-        <div className="card blueprint elev-sm velocity-card">
-          <i className="corner tl"></i><i className="corner tr"></i><i className="corner bl"></i><i className="corner br"></i>
+        <div className="card elev-sm velocity-card">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div className="card-title">{t.dash.velocityTitle}</div>
+            <div className="card-title">{t.dash.velocityTitle} <InfoHelp id="packetSpeed" /></div>
             <div className="tag tag-accent">{events.length ? Math.min(events.length, 40) : 0} {t.dash.pktsUnit}</div>
           </div>
           <ActivitySparkline events={events} />
           <div className="velocity-stats">
-            <div><span className="mini-label">{t.dash.statPacketBuffer}</span><span className="mini-val mono">{events.length} / 100</span></div>
-            <div><span className="mini-label">{t.dash.statModels}</span><span className="mini-val mono">3 / 3 {t.dash.active}</span></div>
-            <div><span className="mini-label">{t.dash.statSiren}</span><span className="mini-val mono">{connected ? t.settings.on : t.settings.off}</span></div>
+            <div><span className="mini-label">{t.dash.statPacketBuffer} <InfoHelp id="buffer" /></span><span className="mini-val mono">{events.length} / 100</span></div>
+            <div><span className="mini-label">{t.dash.statModels} <InfoHelp id="lstm" /></span><span className="mini-val mono">3 / 3 {t.dash.active}</span></div>
           </div>
         </div>
       </div>
 
       <div className="dash-stats-grid">
         {statCards.map((c) => (
-          <div key={c.key} className="card blueprint elev-sm dash-stat-card">
-            <i className="corner tl"></i><i className="corner tr"></i><i className="corner bl"></i><i className="corner br"></i>
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d={c.icon}></path></svg>
+          <div key={c.key} className="card elev-sm dash-stat-card">
+            <div className="stat-icon-box"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6"><path d={c.icon}></path></svg></div>
             <div className="stat-value">{c.value}</div>
-            <div className="stat-label">{c.label}</div>
+            <div className="stat-label">{c.label} {STAT_HELP[c.key] && <InfoHelp id={STAT_HELP[c.key]} />}</div>
           </div>
         ))}
       </div>
 
-      <div className="card blueprint elev-sm feed-card">
-        <i className="corner tl"></i><i className="corner tr"></i><i className="corner bl"></i><i className="corner br"></i>
+      {!isGeneralView && (
+        <div className="admin-section">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+            <h3 style={{ margin: 0 }}>{t.dash.adminPanel}</h3>
+            <span className="tag tag-accent">{t.dash.adminOnly}</span>
+          </div>
+
+          <h4 className="section-subhead">{t.dash.overview}</h4>
+          <div className="overview-grid">
+            <div className="card elev-sm mini-stat-card">
+              <div className="mini-stat-value" style={{ color: 'var(--color-accent-strong)' }}>84/100</div>
+              <div className="mini-stat-label">{t.dash.score} <InfoHelp id="score" /></div>
+            </div>
+            <div className="card elev-sm mini-stat-card">
+              <div className="mini-stat-value">7</div>
+              <div className="mini-stat-label">{t.dash.openIncidents} <InfoHelp id="incidents" /></div>
+            </div>
+            <div className="card elev-sm mini-stat-card">
+              <div className="mini-stat-value" style={{ color: 'var(--color-danger)' }}>3</div>
+              <div className="mini-stat-label">{t.dash.criticalAlerts} <InfoHelp id="critical" /></div>
+            </div>
+            <div className="card elev-sm mini-stat-card">
+              <div className="mini-stat-value" style={{ color: 'var(--color-success)', fontSize: 22 }}>{t.dash.online}</div>
+              <div className="mini-stat-label">{t.dash.systemStatus}</div>
+            </div>
+          </div>
+
+          <h4 className="section-subhead">{t.dash.platformMonitoring} <InfoHelp id="platformPerf" /></h4>
+          <div className="platform-grid">
+            <div className="card elev-sm platform-card">
+              <div className="platform-value">34%</div>
+              <div className="platform-label">{t.dash.cpu}</div>
+              <div className="dist-bar-bg"><div className="dist-bar-fill" style={{ width: '34%' }} /></div>
+            </div>
+            <div className="card elev-sm platform-card">
+              <div className="platform-value">58%</div>
+              <div className="platform-label">{t.dash.memory}</div>
+              <div className="dist-bar-bg"><div className="dist-bar-fill" style={{ width: '58%' }} /></div>
+            </div>
+            <div className="card elev-sm platform-card">
+              <div className="platform-value" style={{ color: 'var(--color-success)' }}>{t.dash.online}</div>
+              <div className="platform-label">{t.dash.database}</div>
+            </div>
+            <div className="card elev-sm platform-card">
+              <div className="platform-value">14,502</div>
+              <div className="platform-label">{t.dash.apiRequests}</div>
+            </div>
+            <div className="card elev-sm platform-card">
+              <div className="platform-value">71%</div>
+              <div className="platform-label">{t.dash.storage}</div>
+              <div className="dist-bar-bg"><div className="dist-bar-fill" style={{ width: '71%' }} /></div>
+            </div>
+            <div className="card elev-sm platform-card">
+              <div className="platform-value">128 ms</div>
+              <div className="platform-label">{t.dash.responseTime} <InfoHelp id="respTime" /></div>
+            </div>
+          </div>
+
+          <h4 className="section-subhead">{t.dash.usageAnalytics}</h4>
+          <div className="usage-grid">
+            <div className="card elev-sm mini-stat-card"><div className="mini-stat-value">612</div><div className="mini-stat-label">{t.dash.activeUsers}</div></div>
+            <div className="card elev-sm mini-stat-card"><div className="mini-stat-value">9</div><div className="mini-stat-label">{t.dash.newMembers}</div></div>
+            <div className="card elev-sm mini-stat-card"><div className="mini-stat-value" style={{ color: 'var(--color-success)' }}>+12%</div><div className="mini-stat-label">{t.dash.loginTrend}</div></div>
+            <div className="card elev-sm mini-stat-card"><div className="mini-stat-value">6m 42s</div><div className="mini-stat-label">{t.dash.avgSession}</div></div>
+          </div>
+
+          <div className="browser-device-grid">
+            <div className="card elev-sm" style={{ padding: 20 }}>
+              <div className="card-title" style={{ marginBottom: 14 }}>{t.dash.browserStats}</div>
+              {[['Chrome', 64], ['Safari', 21], ['Firefox', 9], [t.dash.other, 6]].map(([label, pct]) => (
+                <div key={label} className="dist-item">
+                  <div className="dist-header"><span>{label}</span><span style={{ fontWeight: 600 }}>{pct}%</span></div>
+                  <div className="dist-bar-bg"><div className="dist-bar-fill" style={{ width: `${pct}%` }} /></div>
+                </div>
+              ))}
+            </div>
+            <div className="card elev-sm" style={{ padding: 20 }}>
+              <div className="card-title" style={{ marginBottom: 14 }}>{t.dash.deviceStats}</div>
+              {[[t.dash.desktop, 58], [t.dash.mobile, 34], [t.dash.tablet, 8]].map(([label, pct]) => (
+                <div key={label} className="dist-item">
+                  <div className="dist-header"><span>{label}</span><span style={{ fontWeight: 600 }}>{pct}%</span></div>
+                  <div className="dist-bar-bg"><div className="dist-bar-fill" style={{ width: `${pct}%` }} /></div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="card elev-sm feed-card">
         <div className="feed-header-row">
           <div className="card-title">{t.dash.streamTitle}</div>
           <div className="tag tag-neutral">{t.dash.streamHint}</div>

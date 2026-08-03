@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { playSound } from '../utils/sound';
 import { useApp } from '../context/AppContext';
+import InfoHelp from '../components/InfoHelp';
 
 export default function Analytics() {
   const { t, lang } = useApp();
@@ -89,10 +90,9 @@ export default function Analytics() {
       {!hasData && <div className="tag tag-outline" style={{ padding: '8px 14px' }}>{t.analytics.demoNotice}</div>}
 
       <div className="analytics-top-grid">
-        <div className="card blueprint elev-sm" style={{ padding: 'var(--space-4)', gap: 'var(--space-3)' }}>
-          <i className="corner tl"></i><i className="corner tr"></i><i className="corner bl"></i><i className="corner br"></i>
+        <div className="card elev-sm" style={{ padding: 'var(--space-4)', gap: 'var(--space-3)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-            <div className="card-title">{t.analytics.spectrumTitle}</div>
+            <div className="card-title">{t.analytics.spectrumTitle} <InfoHelp id="attackDist" /></div>
             <div className="tag tag-neutral">{displayTotal} {t.analytics.totalSampled}</div>
           </div>
           {spectrumRows.map((row) => (
@@ -103,12 +103,11 @@ export default function Analytics() {
           ))}
         </div>
 
-        <div className="card blueprint elev-sm" style={{ padding: 'var(--space-4)', gap: 'var(--space-3)' }}>
-          <i className="corner tl"></i><i className="corner tr"></i><i className="corner bl"></i><i className="corner br"></i>
-          <div className="card-title">{t.analytics.mitreTitle}</div>
+        <div className="card elev-sm" style={{ padding: 'var(--space-4)', gap: 'var(--space-3)' }}>
+          <div className="card-title">{t.analytics.mitreTitle} <InfoHelp id="mitre" /></div>
           <div style={{ overflowX: 'auto' }}>
             <table className="table">
-              <thead><tr><th>{t.analytics.colTactic}</th><th>{t.analytics.colTechnique}</th><th>{t.analytics.colSeverity}</th></tr></thead>
+              <thead><tr><th>{t.analytics.colTactic}</th><th>{t.analytics.colTechnique}</th><th>{t.analytics.colSeverity} <InfoHelp id="severityCol" /></th></tr></thead>
               <tbody>
                 {mitreRows.map((row) => (
                   <tr key={row.id}>
@@ -124,11 +123,10 @@ export default function Analytics() {
       </div>
 
       <div>
-        <div className="card-title" style={{ marginBottom: 'var(--space-3)' }}>{t.analytics.telemetryTitle}</div>
+        <div className="card-title" style={{ marginBottom: 'var(--space-3)' }}>{t.analytics.telemetryTitle} <InfoHelp id="modelPerf" /></div>
         <div className="models-grid">
           {telemetryData.map((m) => (
-            <div key={m.tag} className="card blueprint elev-sm model-card">
-              <i className="corner tl"></i><i className="corner tr"></i><i className="corner bl"></i><i className="corner br"></i>
+            <div key={m.tag} className="card elev-sm model-card">
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span className="tag tag-outline">{m.tag}</span>
                 <span className="tag tag-accent">{t.analytics.online}</span>
@@ -138,7 +136,7 @@ export default function Analytics() {
               <div className="model-metrics-grid">
                 <div><span className="metric-label text-muted">{t.analytics.inputShape}</span><span className="metric-val">{m.inputShape}</span></div>
                 <div><span className="metric-label text-muted">{t.analytics.validationAcc}</span><span className="metric-val" style={{ color: 'var(--color-accent)' }}>{m.acc}</span></div>
-                <div><span className="metric-label text-muted">{t.analytics.f1}</span><span className="metric-val">{m.f1}</span></div>
+                <div><span className="metric-label text-muted">{t.analytics.f1} <InfoHelp id="f1score" /></span><span className="metric-val">{m.f1}</span></div>
                 <div><span className="metric-label text-muted">{t.analytics.latency}</span><span className="metric-val" style={{ color: 'var(--color-accent)' }}>{m.latency}</span></div>
               </div>
             </div>

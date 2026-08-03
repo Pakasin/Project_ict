@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { playSound } from '../utils/sound';
 import ThreatInspectModal from '../components/ThreatInspectModal';
+import InfoHelp from '../components/InfoHelp';
 import { useApp } from '../context/AppContext';
 
 export default function Incidents() {
@@ -79,25 +80,21 @@ export default function Incidents() {
       </div>
 
       <div className="incidents-stats-grid">
-        <div className={`card blueprint elev-sm incidents-stat-card ${filterStatus === 'OPEN' ? 'active-filter' : ''}`} onClick={() => { playSound('click'); setFilterStatus(filterStatus === 'OPEN' ? 'ALL' : 'OPEN'); }}>
-          <i className="corner tl"></i><i className="corner tr"></i><i className="corner bl"></i><i className="corner br"></i>
+        <div className={`card elev-sm incidents-stat-card ${filterStatus === 'OPEN' ? 'active-filter' : ''}`} onClick={() => { playSound('click'); setFilterStatus(filterStatus === 'OPEN' ? 'ALL' : 'OPEN'); }}>
           <div className="stat-value" style={{ color: 'var(--color-danger)' }}>{openCount}</div><div className="text-muted" style={{ fontSize: 12 }}>{t.incidents.statOpen}</div>
         </div>
-        <div className={`card blueprint elev-sm incidents-stat-card ${filterStatus === 'INVESTIGATING' ? 'active-filter' : ''}`} onClick={() => { playSound('click'); setFilterStatus(filterStatus === 'INVESTIGATING' ? 'ALL' : 'INVESTIGATING'); }}>
-          <i className="corner tl"></i><i className="corner tr"></i><i className="corner bl"></i><i className="corner br"></i>
+        <div className={`card elev-sm incidents-stat-card ${filterStatus === 'INVESTIGATING' ? 'active-filter' : ''}`} onClick={() => { playSound('click'); setFilterStatus(filterStatus === 'INVESTIGATING' ? 'ALL' : 'INVESTIGATING'); }}>
           <div className="stat-value">{invCount}</div><div className="text-muted" style={{ fontSize: 12 }}>{t.incidents.statInvestigating}</div>
         </div>
-        <div className={`card blueprint elev-sm incidents-stat-card ${filterStatus === 'MITIGATED' ? 'active-filter' : ''}`} onClick={() => { playSound('click'); setFilterStatus(filterStatus === 'MITIGATED' ? 'ALL' : 'MITIGATED'); }}>
-          <i className="corner tl"></i><i className="corner tr"></i><i className="corner bl"></i><i className="corner br"></i>
+        <div className={`card elev-sm incidents-stat-card ${filterStatus === 'MITIGATED' ? 'active-filter' : ''}`} onClick={() => { playSound('click'); setFilterStatus(filterStatus === 'MITIGATED' ? 'ALL' : 'MITIGATED'); }}>
           <div className="stat-value" style={{ color: 'var(--color-accent)' }}>{mitCount}</div><div className="text-muted" style={{ fontSize: 12 }}>{t.incidents.statMitigated}</div>
         </div>
       </div>
 
       <div className="incidents-main-layout">
-        <div className="card blueprint elev-sm incidents-queue-card">
-          <i className="corner tl"></i><i className="corner tr"></i><i className="corner bl"></i><i className="corner br"></i>
+        <div className="card elev-sm incidents-queue-card">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
-            <div className="card-title">{t.incidents.queueTitle} <span className="text-muted mono" style={{ fontSize: 12, fontWeight: 400 }}>({filteredIncidents.length})</span></div>
+            <div className="card-title">{t.incidents.queueTitle} <InfoHelp id="incQueue" /> <span className="text-muted mono" style={{ fontSize: 12, fontWeight: 400 }}>({filteredIncidents.length})</span></div>
             <div className="seg">
               <label className="seg-opt"><input type="radio" name="incFilter" checked={filterStatus === 'ALL'} onChange={() => setFilterStatus('ALL')} />{t.incidents.filterAll}</label>
               <label className="seg-opt"><input type="radio" name="incFilter" checked={filterStatus === 'OPEN'} onChange={() => setFilterStatus('OPEN')} />{t.incidents.filterOpen}</label>
@@ -164,9 +161,8 @@ export default function Incidents() {
           )}
         </div>
 
-        <div className="card blueprint elev-sm audit-card">
-          <i className="corner tl"></i><i className="corner tr"></i><i className="corner bl"></i><i className="corner br"></i>
-          <div className="card-title">{t.incidents.auditTitle}</div>
+        <div className="card elev-sm audit-card">
+          <div className="card-title">{t.incidents.auditTitle} <InfoHelp id="opLog" /></div>
           <div className="audit-list">
             {auditLogs.length === 0 ? (
               <div className="text-muted" style={{ fontSize: 13, padding: '16px 0' }}>{t.incidents.auditEmpty}</div>

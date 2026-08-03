@@ -154,19 +154,19 @@ export default function Login({ onLoginSuccess }) {
 
   return (
     <div className="login-shell">
-      <div className={`card blueprint elev-md login-card ${shake ? 'shake' : ''}`}>
-        <i className="corner tl"></i><i className="corner tr"></i><i className="corner bl"></i><i className="corner br"></i>
-
+      <div className={`card elev-md login-card ${shake ? 'shake' : ''}`}>
         <div className="login-brand">
           <div className="login-brand-row">
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--color-accent)" strokeWidth="1.5"><path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6l7-3z"></path></svg>
-            <h1 style={{ fontSize: 26, margin: 0 }}>{t.brand}</h1>
+            <span className="shield-icon" style={{ width: 52, height: 52, borderRadius: 14 }}>
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--color-accent)" strokeWidth="1.5"><path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6l7-3z"></path></svg>
+            </span>
+            <h1 style={{ fontSize: 22, margin: 0 }}>{t.brand}</h1>
           </div>
           <div className="login-tagline">{t.tagline}</div>
         </div>
 
-        {error && <div className="card blueprint login-notice" style={{ borderColor: 'var(--color-danger)', color: 'var(--color-danger)', fontSize: 13 }}>{error}</div>}
-        {successMsg && <div className="card blueprint login-notice" style={{ borderColor: 'var(--color-accent)', fontSize: 13 }}>{successMsg}</div>}
+        {error && <div className="card login-notice" style={{ borderColor: 'var(--color-danger)', color: 'var(--color-danger)', fontSize: 13 }}>{error}</div>}
+        {successMsg && <div className="card login-notice" style={{ borderColor: 'var(--color-accent)', fontSize: 13 }}>{successMsg}</div>}
 
         {authMode === 'signin' && (
           <form onSubmit={handleLoginSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>

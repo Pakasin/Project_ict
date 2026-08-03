@@ -7,6 +7,7 @@ export function AppProvider({ auth, updateProfile, children }) {
   const [theme, setTheme] = useState(() => localStorage.getItem('cybershield_theme') || 'dark')
   const [lang, setLang] = useState(() => localStorage.getItem('cybershield_lang') || 'th')
   const [previewAsGeneral, setPreviewAsGeneral] = useState(false)
+  const [openHelpId, setOpenHelpId] = useState(null)
 
   useEffect(() => {
     localStorage.setItem('cybershield_theme', theme)
@@ -32,6 +33,7 @@ export function AppProvider({ auth, updateProfile, children }) {
     t,
     previewAsGeneral, setPreviewAsGeneral,
     isAdminActual, isGeneralView,
+    openHelpId, setOpenHelpId,
   }
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>

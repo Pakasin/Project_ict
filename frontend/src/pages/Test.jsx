@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { playSound } from '../utils/sound'
 import { useApp } from '../context/AppContext'
+import InfoHelp from '../components/InfoHelp'
 
 export default function Test() {
   const { t, isGeneralView } = useApp()
@@ -83,16 +84,14 @@ export default function Test() {
       </div>
 
       <div className="seg">
-        <label className="seg-opt" style={{ flex: 1, justifyContent: 'center' }}><input type="radio" name="model" checked={activeTab === 'sqli'} onChange={() => { setActiveTab('sqli'); setResult(null); setError(null) }} />{t.manual.tabSql}</label>
-        <label className="seg-opt" style={{ flex: 1, justifyContent: 'center' }}><input type="radio" name="model" checked={activeTab === 'intrusion'} onChange={() => { setActiveTab('intrusion'); setResult(null); setError(null) }} />{t.manual.tabIntrusion}</label>
-        <label className="seg-opt" style={{ flex: 1, justifyContent: 'center' }}><input type="radio" name="model" checked={activeTab === 'flow'} onChange={() => { setActiveTab('flow'); setResult(null); setError(null) }} />{t.manual.tabFlow}</label>
+        <label className="seg-opt" style={{ flex: 1, justifyContent: 'center' }}><input type="radio" name="model" checked={activeTab === 'sqli'} onChange={() => { setActiveTab('sqli'); setResult(null); setError(null) }} />{t.manual.tabSql} <InfoHelp id="sqliModelHelp" /></label>
+        <label className="seg-opt" style={{ flex: 1, justifyContent: 'center' }}><input type="radio" name="model" checked={activeTab === 'intrusion'} onChange={() => { setActiveTab('intrusion'); setResult(null); setError(null) }} />{t.manual.tabIntrusion} <InfoHelp id="unswNb15" /></label>
+        <label className="seg-opt" style={{ flex: 1, justifyContent: 'center' }}><input type="radio" name="model" checked={activeTab === 'flow'} onChange={() => { setActiveTab('flow'); setResult(null); setError(null) }} />{t.manual.tabFlow} <InfoHelp id="cicIds2018" /></label>
       </div>
 
       {isGeneralView && <div className="text-muted" style={{ fontSize: 12 }}>{t.manual.readOnlyNotice}</div>}
 
-      <div className="card blueprint elev-sm test-card">
-        <i className="corner tl"></i><i className="corner tr"></i><i className="corner bl"></i><i className="corner br"></i>
-
+      <div className="card elev-sm test-card">
         {activeTab === 'sqli' && (
           <>
             <div className="field">
@@ -100,11 +99,12 @@ export default function Test() {
               <textarea className="input" value={sqliPayload} onChange={(e) => !isGeneralView && setSqliPayload(e.target.value)} readOnly={isGeneralView} rows={4} />
             </div>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-              <span className="text-muted" style={{ fontSize: 11, textTransform: 'uppercase' }}>{t.manual.presetsLabel}</span>
+              <span className="text-muted" style={{ fontSize: 11, textTransform: 'uppercase' }}>{t.manual.presetsLabel} <InfoHelp id="presetsHelp" /></span>
               <button className="btn btn-secondary" disabled={isGeneralView} onClick={() => { playSound('click'); setSqliPayload("' OR 1=1 --") }}>{t.manual.presetBoolean}</button>
               <button className="btn btn-secondary" disabled={isGeneralView} onClick={() => { playSound('click'); setSqliPayload("1'; DROP TABLE users--") }}>{t.manual.presetStacked}</button>
               <button className="btn btn-secondary" disabled={isGeneralView} onClick={() => { playSound('click'); setSqliPayload("admin' UNION SELECT username, password FROM credentials--") }}>{t.manual.presetUnion}</button>
               <button className="btn btn-secondary" disabled={isGeneralView} onClick={() => { playSound('click'); setSqliPayload("SELECT name, price FROM products WHERE category = 'electronics'") }}>{t.manual.presetClean}</button>
+              <InfoHelp id="cleanBaseline" />
             </div>
             <button className="btn btn-primary" style={{ alignSelf: 'flex-start' }} onClick={() => handlePredict('sqli')} disabled={loading || isGeneralView || !sqliPayload.trim()}>
               {loading ? '...' : t.manual.executeBtn}
@@ -165,14 +165,14 @@ export default function Test() {
       </div>
 
       {error && (
-        <div className="card blueprint result-card alert-result">
+        <div className="card result-card alert-result">
           <h3 style={{ color: 'var(--color-danger)', margin: 0 }}>Model Prediction Error</h3>
           <p className="mono" style={{ fontSize: 13, margin: 0 }}>{error}</p>
         </div>
       )}
 
       {result && (
-        <div className={`card blueprint result-card ${isMalicious ? 'alert-result' : 'safe-result'}`}>
+        <div className={`card result-card ${isMalicious ? 'alert-result' : 'safe-result'}`}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap' }}>
             <span className={`tag ${isMalicious ? 'tag-danger' : 'tag-accent'}`} style={{ fontSize: 13, padding: '5px 14px' }}>
               {isMalicious ? t.manual.resultThreat : t.manual.resultSafe}
