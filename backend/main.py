@@ -30,25 +30,26 @@ async def lifespan(app: FastAPI):
     # สร้าง database tables ถ้ายังไม่มี
     init_db()
 
-    # --- โหลด 3 models ---
+    # --- โหลด models ---
     app.state.model_intrusion = tf.keras.models.load_model(
-        str(MODELS_DIR / "lstm_unswnb15.h5")
+        str(MODELS_DIR / "best_nslkdd_smote.keras")
     )
     app.state.model_flow = tf.keras.models.load_model(
-        str(MODELS_DIR / "lstm_csecicids2018.h5")
+        str(MODELS_DIR / "best.keras")
     )
-    app.state.model_sqli = tf.keras.models.load_model(
-        str(MODELS_DIR / "lstm_sqli.h5")
-    )
+    
+    # Injection Model (SQLi) ยังไม่เสร็จ
+    app.state.model_sqli = None
 
     # --- โหลด scalers (fit บน train set เท่านั้น) ---
-    app.state.scaler_intrusion = joblib.load(str(MODELS_DIR / "scaler_unswnb15.pkl"))
+    app.state.scaler_intrusion = joblib.load(str(MODELS_DIR / "scaler_nslkdd.pkl"))
+    app.state.label_encoders_intrusion = joblib.load(str(MODELS_DIR / "label_encoders_nslkdd.pkl"))
     app.state.scaler_flow = joblib.load(str(MODELS_DIR / "scaler_csecicids2018.pkl"))
 
     # --- โหลด tokenizer สำหรับ SQLi (Keras Tokenizer, vocab=10000) ---
-    app.state.tokenizer_sqli = joblib.load(str(MODELS_DIR / "tokenizer_sqli.pkl"))
+    app.state.tokenizer_sqli = None
 
-    print("✅ All 3 LSTM models + scalers loaded successfully")
+    print("✅ LSTM models + scalers loaded successfully")
     yield
 
 
