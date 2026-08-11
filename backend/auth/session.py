@@ -18,6 +18,18 @@ async def require_login(request: Request) -> str:
     return username
 
 
+async def require_admin(request: Request) -> str:
+    """FastAPI dependency — เหมือน require_login แต่ตั้งใจใช้ชื่อแยกสำหรับ
+    route ที่ mutate state (incidents, firewall). Session middleware มีแค่
+    identity เดียว (ADMIN_USERNAME จาก .env) จึงไม่มี role อื่นให้แยก —
+    request ที่ไม่มี session cookie (เช่น General User ปลอมฝั่ง frontend
+    localStorage) จะถูกปฏิเสธที่นี่โดยธรรมชาติ"""
+    username = request.session.get("username")
+    if not username:
+        raise HTTPException(status_code=401, detail="Admin authentication required")
+    return username
+
+
 def verify_credentials(username: str, password: str) -> bool:
     """ตรวจสอบ credentials กับค่าใน .env"""
     admin_user = os.getenv("ADMIN_USERNAME", "admin")

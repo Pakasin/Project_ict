@@ -1,4 +1,10 @@
 """
+⚠️ NOT the script that produced backend/models/best_sqli.keras. That artifact
+is char-level (vocab=106, maxlen=221 — see sqli_model_metadata.json); this
+script builds a word-level tokenizer (vocab=10000, maxlen=200) and would
+produce a different, incompatible model/tokenizer pair. Kept for reference
+only — do not assume it describes the shipped model. See CLAUDE.md.
+
 CyberShield — Injection Model Training (SQLi)
 
 Dataset: Kaggle sajid576/sql-injection-dataset

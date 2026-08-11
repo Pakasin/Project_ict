@@ -3,29 +3,42 @@ CyberShield — Network Sensor (nfstream)
 
 จับ live network flows จาก network interface
 แปลงเป็น features สำหรับ 2 models:
-  - Intrusion Model (UNSW-NB15): 49 features → R2L / U2R
-  - Flow Model (CSE-CIC-IDS2018): 78 features → DDoS / DoS / PortScan / BruteForce
+  - Intrusion Model (NSL-KDD): 41 features → R2L / U2R
+  - Flow Model (CSE-CIC-IDS2018): 78 raw features → scale → slice 71 → DoS / DDoS / BruteForce
 
-ใช้ Sliding Window (group by source IP, window=10, zero-pad ด้านหน้า)
+Windows เรียงตามเวลาล้วน (chronological, ไม่ group by source IP — ดู CLAUDE.md
+"Neither dataset has a Source IP column"). ไม่ predict จนกว่าจะสะสมครบ 10 flows
+เพราะ training data ทิ้ง incomplete window ทิ้งไป โมเดลไม่เคยเห็น padding จริง
+
+⚠️ feature extraction ยังเป็น placeholder (TODO ด้านล่าง) — sensor นี้ยังใช้งาน
+จริงกับ traffic จริงไม่ได้จนกว่าจะ map field ครบ ต้องมี Linux VM + root ถึงจะทดสอบ
 
 ⚠️ ต้องรันเป็น root (raw socket access):
     sudo python backend/sensors/network_sensor.py
 """
 
 import nfstream
-import numpy as np
 import joblib
 import requests
 import os
+import sys
 import tensorflow as tf
-from collections import defaultdict
+from collections import deque
 from datetime import datetime
 from dotenv import load_dotenv
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
+from backend.inference import (  # noqa: E402
+    load_model_artifacts,
+    predict_intrusion_window,
+    predict_flow_window,
+)
 
 load_dotenv()
 
 # ===== Configuration =====
 WINDOW_SIZE = 10
+MODELS_DIR = os.path.join(os.path.dirname(__file__), "..", "models")
 INTERNAL_URL = "http://localhost:8000/internal/event"
 INTERNAL_TOKEN = os.getenv("INTERNAL_TOKEN", "")
 NETWORK_INTERFACE = os.getenv("NETWORK_INTERFACE", "eth0")
@@ -34,33 +47,33 @@ THRESHOLD_FLOW = float(os.getenv("THRESHOLD_FLOW", "0.80"))
 
 # ===== โหลด Models + Scalers =====
 print("📡 Loading models and scalers...")
-model_intrusion = tf.keras.models.load_model("backend/models/lstm_unswnb15.h5")
-model_flow = tf.keras.models.load_model("backend/models/lstm_csecicids2018.h5")
-scaler_intrusion = joblib.load("backend/models/scaler_unswnb15.pkl")
-scaler_flow = joblib.load("backend/models/scaler_csecicids2018.pkl")
+model_intrusion = tf.keras.models.load_model(os.path.join(MODELS_DIR, "best_nslkdd_smote.keras"))
+model_flow = tf.keras.models.load_model(os.path.join(MODELS_DIR, "best_GRU.keras"))
+scaler_intrusion = joblib.load(os.path.join(MODELS_DIR, "scaler_nslkdd.pkl"))
+scaler_flow = joblib.load(os.path.join(MODELS_DIR, "scaler_csecicids2018.pkl"))
+_artifacts = load_model_artifacts()
+flow_keep_idx = _artifacts["flow_keep_idx"]
+FLOW_CLASSES = _artifacts["flow_classes"]
 print("✅ Models loaded")
 
 # ===== Sliding Window Buffer =====
-# group by source IP — attack patterns จาก IP เดียวกันจะถูกตรวจจับได้
-windows: dict[str, list] = defaultdict(list)
-
-# UNSW-NB15 class labels
-INTRUSION_CLASSES = ["Normal", "R2L", "U2R"]
-# CSE-CIC-IDS2018 class labels
-FLOW_CLASSES = ["BENIGN", "DoS", "DDoS", "PortScan", "BruteForce"]
+# chronological only — ไม่ group by source IP (ตาม CLAUDE.md)
+nsl_window: deque = deque(maxlen=WINDOW_SIZE)
+cic_window: deque = deque(maxlen=WINDOW_SIZE)
 
 
-def extract_unswnb15_features(flow) -> list:
-    """แปลง nfstream flow → UNSW-NB15 49 features
+def extract_nslkdd_features(flow) -> list:
+    """แปลง nfstream flow → NSL-KDD 41 features
 
-    TODO: implement mapping จาก nfstream attributes ไปยัง UNSW-NB15 feature set
+    TODO: implement mapping จาก nfstream attributes ไปยัง NSL-KDD feature set
     ต้อง map fields เช่น:
     - duration, protocol_type, service, flag
     - src_bytes, dst_bytes, land, wrong_fragment
     - urgent, hot, num_failed_logins, logged_in
-    - ... (ดู UNSW-NB15 feature list)
+    - ... (ดู NSL-KDD feature list เต็มใน train_unswnb15.py — ชื่อไฟล์เก่า
+      แต่ปัจจุบัน dataset คือ NSL-KDD ดู CONTEXT.md)
     """
-    # Placeholder — ต้อง implement ตาม feature mapping
+    # Placeholder — ต้อง implement ตาม feature mapping ก่อนใช้งานจริง
     features = [0.0] * 41
     features[0] = float(getattr(flow, "bidirectional_duration_ms", 0))
     features[1] = float(getattr(flow, "src2dst_bytes", 0))
@@ -72,16 +85,16 @@ def extract_unswnb15_features(flow) -> list:
 
 
 def extract_csecicids2018_features(flow) -> list:
-    """แปลง nfstream flow → CSE-CIC-IDS2018 78 features
+    """แปลง nfstream flow → CSE-CIC-IDS2018 78 raw features (scale→slice ทำใน predict_flow)
 
     TODO: implement mapping จาก nfstream attributes ไปยัง CSE-CIC-IDS2018 feature set
     ต้อง map fields เช่น:
     - Flow Duration, Total Fwd Packets, Total Backward Packets
     - Flow Bytes/s, Flow Packets/s
     - Fwd/Bwd Packet Length (Min/Max/Mean/Std)
-    - ... (ดู CSE-CIC-IDS2018 feature list)
+    - ... (ดู CSE-CIC-IDS2018 feature list, ลำดับต้องตรง feature_cols.json)
     """
-    # Placeholder — ต้อง implement ตาม feature mapping
+    # Placeholder — ต้อง implement ตาม feature mapping ก่อนใช้งานจริง
     features = [0.0] * 78
     features[0] = float(getattr(flow, "bidirectional_duration_ms", 0))
     features[1] = float(getattr(flow, "src2dst_packets", 0))
@@ -91,18 +104,6 @@ def extract_csecicids2018_features(flow) -> list:
     features[5] = float(getattr(flow, "bidirectional_packets", 0))
     features[6] = float(getattr(flow, "bidirectional_bytes", 0))
     return features
-
-
-def make_padded_window(features_list: list, feature_len: int) -> np.ndarray:
-    """สร้าง Sliding Window พร้อม zero-pad ด้านหน้า
-
-    Windows สั้นกว่า 10 flows (เช่น IP ใหม่) จะถูก zero-pad
-    ซึ่งตรงกับ training data ที่ train กับ padded samples
-    """
-    window = features_list[-WINDOW_SIZE:]
-    pad_count = WINDOW_SIZE - len(window)
-    padded = [[0.0] * feature_len] * pad_count + window
-    return np.array(padded).reshape(1, WINDOW_SIZE, feature_len)
 
 
 def post_event(model_name: str, attack_class: str, confidence: float, source_ip: str) -> None:
@@ -136,47 +137,28 @@ def main():
     for flow in streamer:
         src_ip = flow.src_ip
 
-        # === Intrusion Model (UNSW-NB15: R2L / U2R) ===
-        nsl_features = extract_unswnb15_features(flow)
-        windows[f"nsl_{src_ip}"].append(nsl_features)
+        # Chronological windows only — no per-source-IP grouping (CLAUDE.md).
+        # Skip prediction until WINDOW_SIZE real flows have accumulated:
+        # training dropped incomplete (padded) windows, so the model has
+        # never seen a padded input and serving must not synthesize one.
+        nsl_window.append(extract_nslkdd_features(flow))
+        cic_window.append(extract_csecicids2018_features(flow))
 
-        X_nsl = make_padded_window(windows[f"nsl_{src_ip}"], 41)
-        X_nsl_scaled = scaler_intrusion.transform(
-            X_nsl.reshape(-1, 41)
-        ).reshape(1, 10, 41)
+        if len(nsl_window) == WINDOW_SIZE:
+            nsl_class, nsl_confidence, _ = predict_intrusion_window(
+                model_intrusion, scaler_intrusion, list(nsl_window)
+            )
+            if nsl_class != "Normal" and nsl_confidence >= THRESHOLD_INTRUSION:
+                post_event("intrusion", nsl_class, nsl_confidence, src_ip)
+                print(f"🚨 [{src_ip}] Intrusion: {nsl_class} ({nsl_confidence:.1%})")
 
-        nsl_probs = model_intrusion.predict(X_nsl_scaled, verbose=0)[0]
-        nsl_pred_idx = int(np.argmax(nsl_probs))
-        nsl_confidence = float(nsl_probs[nsl_pred_idx])
-        nsl_class = INTRUSION_CLASSES[nsl_pred_idx]
-
-        # ส่ง event ถ้า confidence >= threshold หรือไม่ใช่ Normal
-        if nsl_class != "Normal" and nsl_confidence >= THRESHOLD_INTRUSION:
-            post_event("intrusion", nsl_class, nsl_confidence, src_ip)
-            print(f"🚨 [{src_ip}] Intrusion: {nsl_class} ({nsl_confidence:.1%})")
-
-        # === Flow Model (CSE-CIC-IDS2018: DDoS / DoS / PortScan / BruteForce) ===
-        csecic_features = extract_csecicids2018_features(flow)
-        windows[f"cic_{src_ip}"].append(csecic_features)
-
-        X_cic = make_padded_window(windows[f"cic_{src_ip}"], 78)
-        X_cic_scaled = scaler_flow.transform(
-            X_cic.reshape(-1, 78)
-        ).reshape(1, 10, 78)
-
-        cic_probs = model_flow.predict(X_cic_scaled, verbose=0)[0]
-        cic_pred_idx = int(np.argmax(cic_probs))
-        cic_confidence = float(cic_probs[cic_pred_idx])
-        cic_class = FLOW_CLASSES[cic_pred_idx]
-
-        if cic_class != "BENIGN" and cic_confidence >= THRESHOLD_FLOW:
-            post_event("flow", cic_class, cic_confidence, src_ip)
-            print(f"🚨 [{src_ip}] Flow: {cic_class} ({cic_confidence:.1%})")
-
-        # จำกัดขนาด window buffer ไม่ให้ใช้ memory มากเกินไป
-        for key in list(windows.keys()):
-            if len(windows[key]) > WINDOW_SIZE * 2:
-                windows[key] = windows[key][-WINDOW_SIZE:]
+        if len(cic_window) == WINDOW_SIZE:
+            cic_class, cic_confidence, _ = predict_flow_window(
+                model_flow, scaler_flow, flow_keep_idx, FLOW_CLASSES, list(cic_window)
+            )
+            if cic_class != "BENIGN" and cic_confidence >= THRESHOLD_FLOW:
+                post_event("flow", cic_class, cic_confidence, src_ip)
+                print(f"🚨 [{src_ip}] Flow: {cic_class} ({cic_confidence:.1%})")
 
 
 if __name__ == "__main__":

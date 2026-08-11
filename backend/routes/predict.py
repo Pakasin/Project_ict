@@ -6,22 +6,22 @@ POST /api/predict — ส่ง payload ตรงไปที่ model โดย
 และสำหรับ model debugging ตอน development
 
 รองรับ 3 models:
-  - intrusion: รับ 49 features → Intrusion Model (UNSW-NB15)
-  - flow: รับ 78 features → Flow Model (CSE-CIC-IDS2018)
-  - sqli: รับ raw text → Injection Model
+  - intrusion: รับ 41 features → Intrusion Model (NSL-KDD)
+  - flow: รับ 78 raw features → Flow Model (CSE-CIC-IDS2018, scale→slice เหลือ 71 ในเซิร์ฟเวอร์)
+  - sqli: รับ raw text → Injection Model (char-level)
+
+GET /api/model-info — metadata ของทั้ง 3 โมเดล (class labels, feature names,
+input shapes) ใช้โดย Test page (ชื่อ feature) และ Analytics (telemetry)
 """
+
+import os
 
 from fastapi import APIRouter, Request, HTTPException
 from pydantic import BaseModel
-import numpy as np
+
+from backend.inference import predict_intrusion, predict_flow, predict_sqli
 
 router = APIRouter(prefix="/api", tags=["predict"])
-
-# UNSW-NB15 class labels
-INTRUSION_CLASSES = ["Normal", "R2L", "U2R"]
-
-# CSE-CIC-IDS2018 class labels
-FLOW_CLASSES = ["BENIGN", "DoS", "DDoS", "PortScan", "BruteForce"]
 
 
 class PredictRequest(BaseModel):
@@ -36,12 +36,22 @@ class PredictResult(BaseModel):
     predicted_class: str
     confidence: float
     all_probabilities: dict[str, float] | None = None
+    caveat: str | None = None
 
 
 class PredictResponse(BaseModel):
     ok: bool
     result: PredictResult | None = None
     error: str | None = None
+
+
+# Single-flow requests zero-pad 9 of the 10 window rows. Training data never
+# included padded windows (incomplete windows were dropped), so this is a
+# best-effort approximation — surfaced to the UI instead of hidden.
+WINDOW_CAVEAT = (
+    "Single-sample request — window zero-padded to 10 rows. "
+    "Model was never trained on padded windows, so treat this result as approximate."
+)
 
 
 @router.post("/predict", response_model=PredictResponse)
@@ -64,85 +74,66 @@ async def predict(body: PredictRequest, request: Request):
 
 
 async def _predict_intrusion(body: PredictRequest, request: Request) -> PredictResponse:
-    """Intrusion Model (UNSW-NB15) — 49 features → 3-class softmax"""
+    """Intrusion Model (NSL-KDD) — 41 features → 3-class softmax"""
     if not body.features or len(body.features) != 41:
-        raise HTTPException(status_code=400, detail="Intrusion Model requires exactly 49 features")
+        raise HTTPException(status_code=400, detail="Intrusion Model requires exactly 41 features")
 
     model = request.app.state.model_intrusion
     scaler = request.app.state.scaler_intrusion
 
-    # Scale features แล้วสร้าง sliding window (single flow → zero-pad 9 + 1)
-    features = np.array(body.features).reshape(1, -1)
-    scaled = scaler.transform(features)
-
-    # สร้าง padded window: 9 rows zero + 1 row scaled
-    padded = np.zeros((1, 10, 41))
-    padded[0, 9, :] = scaled[0]
-
-    probs = model.predict(padded, verbose=0)[0]
-    pred_idx = int(np.argmax(probs))
+    predicted_class, confidence, all_probs = predict_intrusion(model, scaler, body.features)
 
     return PredictResponse(
         ok=True,
         result=PredictResult(
             model_name="intrusion",
-            predicted_class=INTRUSION_CLASSES[pred_idx],
-            confidence=float(probs[pred_idx]),
-            all_probabilities={
-                cls: float(p) for cls, p in zip(INTRUSION_CLASSES, probs)
-            },
+            predicted_class=predicted_class,
+            confidence=confidence,
+            all_probabilities=all_probs,
+            caveat=WINDOW_CAVEAT,
         ),
     )
 
 
 async def _predict_flow(body: PredictRequest, request: Request) -> PredictResponse:
-    """Flow Model (CSE-CIC-IDS2018) — 78 features → 5-class softmax"""
+    """Flow Model (CSE-CIC-IDS2018) — 78 raw features → scale → slice 71 → 4-class softmax"""
     if not body.features or len(body.features) != 78:
-        raise HTTPException(status_code=400, detail="Flow Model requires exactly 78 features")
+        raise HTTPException(status_code=400, detail="Flow Model requires exactly 78 raw features")
 
     model = request.app.state.model_flow
     scaler = request.app.state.scaler_flow
+    flow_keep_idx = request.app.state.flow_keep_idx
+    flow_classes = request.app.state.flow_classes
 
-    features = np.array(body.features).reshape(1, -1)
-    scaled = scaler.transform(features)
-
-    padded = np.zeros((1, 10, 78))
-    padded[0, 9, :] = scaled[0]
-
-    probs = model.predict(padded, verbose=0)[0]
-    pred_idx = int(np.argmax(probs))
+    predicted_class, confidence, all_probs = predict_flow(
+        model, scaler, flow_keep_idx, flow_classes, body.features
+    )
 
     return PredictResponse(
         ok=True,
         result=PredictResult(
             model_name="flow",
-            predicted_class=FLOW_CLASSES[pred_idx],
-            confidence=float(probs[pred_idx]),
-            all_probabilities={
-                cls: float(p) for cls, p in zip(FLOW_CLASSES, probs)
-            },
+            predicted_class=predicted_class,
+            confidence=confidence,
+            all_probabilities=all_probs,
+            caveat=WINDOW_CAVEAT,
         ),
     )
 
 
 async def _predict_sqli(body: PredictRequest, request: Request) -> PredictResponse:
-    """Injection Model (SQLi) — raw text → Embedding → LSTM → sigmoid"""
-    from tensorflow.keras.preprocessing.sequence import pad_sequences
-
+    """Injection Model (SQLi) — char-level Embedding → LSTM → sigmoid"""
     if not body.payload:
         raise HTTPException(status_code=400, detail="SQLi Model requires a payload (raw query text)")
 
     model = request.app.state.model_sqli
-    tokenizer = request.app.state.tokenizer_sqli
+    if model is None:
+        return PredictResponse(ok=False, error="SQLi model failed to load — check server startup logs")
 
-    # Tokenize + pad (maxlen=200 ตาม training)
-    seq = pad_sequences(
-        tokenizer.texts_to_sequences([body.payload]),
-        maxlen=200,
-    )
+    word_index = request.app.state.sqli_word_index
+    threshold = float(os.getenv("THRESHOLD_SQLI", "0.75"))
 
-    confidence = float(model.predict(seq, verbose=0)[0][0])
-    predicted_class = "SQL Injection" if confidence >= 0.5 else "Normal"
+    predicted_class, confidence, all_probs = predict_sqli(model, word_index, threshold, body.payload)
 
     return PredictResponse(
         ok=True,
@@ -150,9 +141,30 @@ async def _predict_sqli(body: PredictRequest, request: Request) -> PredictRespon
             model_name="sqli",
             predicted_class=predicted_class,
             confidence=confidence,
-            all_probabilities={
-                "Normal": 1.0 - confidence,
-                "SQL Injection": confidence,
-            },
+            all_probabilities=all_probs,
         ),
     )
+
+
+@router.get("/model-info")
+async def model_info(request: Request):
+    """Metadata ของทั้ง 3 โมเดล — class labels, feature names, input shapes, สถานะโหลด"""
+    return {
+        "ok": True,
+        "intrusion": {
+            "loaded": request.app.state.model_intrusion is not None,
+            "input_shape": request.app.state.model_metadata["intrusion_model"],
+            "class_labels": ["Normal", "R2L", "U2R"],
+        },
+        "flow": {
+            "loaded": request.app.state.model_flow is not None,
+            "input_shape": request.app.state.model_metadata["flow_model"],
+            "class_labels": request.app.state.flow_classes,
+            "raw_feature_names": request.app.state.flow_raw_cols,
+            "trained_feature_names": request.app.state.flow_trained_cols,
+        },
+        "sqli": {
+            "loaded": request.app.state.model_sqli is not None,
+            "metadata": request.app.state.sqli_metadata,
+        },
+    }

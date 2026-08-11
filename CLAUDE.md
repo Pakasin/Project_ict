@@ -16,8 +16,8 @@ Three models, each owning distinct attack classes — never overlap:
 | Model | Sensor | Attack Classes | Artifacts | Status |
 |---|---|---|---|---|
 | Intrusion Model | nfstream (Network Sensor) | R2L, U2R | `best_nslkdd_smote.keras` + `scaler_nslkdd.pkl` + `label_encoders_nslkdd.pkl` | ✅ complete (dataset switched UNSW-NB15 → NSL-KDD, SMOTE-balanced, see CONTEXT.md) |
-| Flow Model | nfstream (Network Sensor) | DoS, DDoS, BruteForce | `best_GRU.keras` + `scaler_csecicids2018.pkl` + `feature_cols.json` + `trained_feature_cols.json` | ✅ complete (4-class, PortScan excluded — absent from dataset) |
-| Injection Model | mitmproxy (HTTP Sensor) | SQL Injection | `lstm_sqli.h5` + `tokenizer_sqli.pkl` | ⏳ not started |
+| Flow Model | nfstream (Network Sensor) | DoS, DDoS, BruteForce | `best_GRU.keras` + `scaler_csecicids2018.pkl` + `feature_cols.json` + `trained_feature_cols.json` | ✅ complete (4-class, PortScan excluded — absent from dataset). `best.keras` (78-feature LSTM, no fingerprint drop) is kept alongside as the pre-fix artifact for comparison — never load it for serving, see f1 note below |
+| Injection Model | mitmproxy (HTTP Sensor) | SQL Injection | `best_sqli.keras` + `sqli_tokenizer.json` + `sqli_model_metadata.json` | ✅ complete — **char-level**, not the word-level pipeline `notebooks/train_sqli.py` describes (see note below) |
 
 Data flow:
 ```
@@ -43,7 +43,7 @@ Network models use **Sliding Window** of shape `(10, features)`. Neither dataset
 - `trained_feature_cols.json` (71) = what the model actually takes, after dropping the 7 fingerprint features in `FINGERPRINT_FEATURES` (TCP init window, header lengths, MSS, `Dst Port`, `Protocol`). Those encode *which host sent the flow*, not attack behaviour, and scored a spurious 0.9999 f1_macro; the honest 71-feature number is 0.9534.
 - Order is fixed: **scale with all 78, then slice to 71** — never slice first, or values land in the wrong columns with no error raised.
 
-SQLi model: Embedding layer, no scaler. Uses `tokenizer_sqli.pkl` (Keras Tokenizer, vocab=10000, maxlen=200).
+SQLi model: Embedding layer, no scaler. Uses `sqli_tokenizer.json` — a plain `{char: index}` dict (char-level, vocab=106, maxlen=221, `<OOV>` index 1), **not** the word-level Keras `Tokenizer` (vocab=10000, maxlen=200) that `notebooks/train_sqli.py` builds and `tokenizer_sqli.pkl` implies. That script/filename pair does not match the artifact actually shipped in `backend/models/` — treat `sqli_model_metadata.json` as the source of truth, not the training script. Threshold default 0.75 (`THRESHOLD_SQLI`). Serving encodes char-by-char via `backend/inference.py::encode_sqli_text`, pre-padding/truncating to 221 (keras `pad_sequences` default direction).
 
 ## Common Commands
 
@@ -81,3 +81,13 @@ Always enable WAL mode on every connection:
 conn.execute("PRAGMA journal_mode=WAL")
 ```
 Schema uses no SQLite-specific types — designed for PostgreSQL migration.
+
+Tables: `prediction_events` (model output log) + `incident_status`, `audit_log`, `blocked_ips` (Incidents/Settings-Firewall state — previously `localStorage` only, now persisted so it survives across browsers/devices). All three live in `backend/db.py` alongside `prediction_events`.
+
+## Inference logic
+
+`backend/inference.py` holds the scale→slice (Flow Model) and char-encode (SQLi) logic shared between `POST /api/predict` (manual test, single zero-padded sample) and the live sensors (`network_sensor.py`, `http_sensor.py`, real accumulated windows). Do not duplicate this logic in a route or sensor — import from here so the two paths can't drift apart again.
+
+## Auth
+
+Single admin identity only, defined in `.env` (`ADMIN_USERNAME`/`ADMIN_PASSWORD`) — no user table. `backend/auth/session.py::require_admin` is a FastAPI dependency guarding every state-mutating route (`PATCH /api/incidents/*`, `POST/DELETE /api/blocked-ips/*`); General User accounts are frontend-only (`localStorage`, `Login.jsx` signup form) and never receive a real session cookie, so they are correctly rejected by `require_admin` at the API layer regardless of what the UI shows/hides.

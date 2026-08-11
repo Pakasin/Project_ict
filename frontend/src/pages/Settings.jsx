@@ -74,27 +74,49 @@ export default function Settings() {
     localStorage.setItem('cybershield_refresh_interval', e.target.value);
   }
 
-  // Firewall
-  const [blockedIps, setBlockedIps] = useState(() => JSON.parse(localStorage.getItem('cybershield_blocked_ips') || '["192.168.1.105", "10.0.0.88"]'));
+  // Firewall — quarantine list lives in SQLite (backend/routes/incidents.py),
+  // shared with the Incidents page so a MITIGATED action shows up here too.
+  const [blockedIps, setBlockedIps] = useState([]);
 
-  function unblockIp(ip) {
-    if (isGeneralView) return;
-    playSound('click');
-    const next = blockedIps.filter((item) => item !== ip);
-    setBlockedIps(next);
-    localStorage.setItem('cybershield_blocked_ips', JSON.stringify(next));
-    playSound('success');
+  useEffect(() => { fetchBlockedIps(); }, []);
+
+  async function fetchBlockedIps() {
+    try {
+      const res = await fetch('/api/blocked-ips');
+      const data = await res.json();
+      if (data.ok) setBlockedIps(data.data.map((row) => row.ip));
+    } catch (err) {
+      console.error('Failed to fetch blocked IPs:', err);
+    }
   }
 
-  function addDemoBlockedIp() {
+  async function unblockIp(ip) {
+    if (isGeneralView) return;
+    playSound('click');
+    try {
+      const res = await fetch(`/api/blocked-ips/${encodeURIComponent(ip)}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (data.ok) { setBlockedIps((prev) => prev.filter((item) => item !== ip)); playSound('success'); }
+    } catch (err) {
+      console.error('Failed to unblock IP:', err);
+    }
+  }
+
+  async function addDemoBlockedIp() {
     if (isGeneralView) return;
     playSound('click');
     const demoIp = `172.16.${Math.floor(Math.random() * 254 + 1)}.${Math.floor(Math.random() * 254 + 1)}`;
-    if (!blockedIps.includes(demoIp)) {
-      const next = [...blockedIps, demoIp];
-      setBlockedIps(next);
-      localStorage.setItem('cybershield_blocked_ips', JSON.stringify(next));
-      playSound('success');
+    if (blockedIps.includes(demoIp)) return;
+    try {
+      const res = await fetch('/api/blocked-ips', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ip: demoIp }),
+      });
+      const data = await res.json();
+      if (data.ok) { setBlockedIps((prev) => [...prev, demoIp]); playSound('success'); }
+    } catch (err) {
+      console.error('Failed to add blocked IP:', err);
     }
   }
 

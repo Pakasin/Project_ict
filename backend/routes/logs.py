@@ -36,6 +36,7 @@ async def get_logs(
     model_name: str | None = Query(default=None),
     attack_class: str | None = Query(default=None),
     alerts_only: bool = Query(default=False),
+    since: str | None = Query(default=None, description="ISO timestamp — return only events at/after this time"),
 ):
     """ดึง Prediction Events พร้อม filters และ pagination"""
     events = get_prediction_events(
@@ -44,5 +45,6 @@ async def get_logs(
         model_name=model_name,
         attack_class=attack_class,
         alerts_only=alerts_only,
+        since=since,
     )
     return LogsResponse(ok=True, data=events, count=len(events))

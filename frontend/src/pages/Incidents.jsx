@@ -5,16 +5,16 @@ import InfoHelp from '../components/InfoHelp';
 import { useApp } from '../context/AppContext';
 
 export default function Incidents() {
-  const { t, isGeneralView } = useApp();
+  const { t, isGeneralView, auth } = useApp();
   const [incidents, setIncidents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedEvent, setSelectedEvent] = useState(null);
   const [filterStatus, setFilterStatus] = useState('ALL');
 
-  const [statusMap, setStatusMap] = useState(() => JSON.parse(localStorage.getItem('cybershield_incident_statuses') || '{}'));
-  const [auditLogs, setAuditLogs] = useState(() => JSON.parse(localStorage.getItem('cybershield_audit_logs') || '[]'));
+  const [statusMap, setStatusMap] = useState({});
+  const [auditLogs, setAuditLogs] = useState([]);
 
-  useEffect(() => { fetchAlerts(); }, []);
+  useEffect(() => { fetchAlerts(); fetchStatuses(); fetchAuditLogs(); }, []);
 
   async function fetchAlerts() {
     setLoading(true);
@@ -29,32 +29,47 @@ export default function Incidents() {
     }
   }
 
-  function updateIncidentStatus(eventId, sourceIp, newStatus, actionName) {
+  async function fetchStatuses() {
+    try {
+      const res = await fetch('/api/incidents/statuses');
+      const data = await res.json();
+      if (data.ok) setStatusMap(data.data);
+    } catch (err) {
+      console.error('Failed to fetch incident statuses:', err);
+    }
+  }
+
+  async function fetchAuditLogs() {
+    try {
+      const res = await fetch('/api/audit-log?limit=50');
+      const data = await res.json();
+      if (data.ok) setAuditLogs(data.data);
+    } catch (err) {
+      console.error('Failed to fetch audit log:', err);
+    }
+  }
+
+  async function updateIncidentStatus(eventId, sourceIp, newStatus, actionName) {
     if (isGeneralView) return;
     playSound('click');
-    const key = eventId ? `ID-${eventId}` : `IP-${sourceIp}`;
-    const nextMap = { ...statusMap, [key]: newStatus };
-    setStatusMap(nextMap);
-    localStorage.setItem('cybershield_incident_statuses', JSON.stringify(nextMap));
-
-    if (newStatus === 'MITIGATED') {
-      const blocked = JSON.parse(localStorage.getItem('cybershield_blocked_ips') || '[]');
-      if (!blocked.includes(sourceIp)) {
-        blocked.push(sourceIp);
-        localStorage.setItem('cybershield_blocked_ips', JSON.stringify(blocked));
-      }
-      playSound('success');
+    try {
+      const res = await fetch(`/api/incidents/${eventId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: newStatus, source_ip: sourceIp, action_name: actionName }),
+      });
+      const data = await res.json();
+      if (!data.ok) { console.error('Failed to update incident:', data.error); return; }
+      setStatusMap((prev) => ({ ...prev, [eventId]: newStatus }));
+      if (newStatus === 'MITIGATED') playSound('success');
+      fetchAuditLogs();
+    } catch (err) {
+      console.error('Failed to update incident:', err);
     }
-
-    const entry = { id: Date.now(), time: new Date().toLocaleTimeString('th-TH', { hour12: false }), user: 'Operator Admin', action: actionName, target: `Ref #${eventId || 'N/A'} (${sourceIp})` };
-    const nextAudit = [entry, ...auditLogs].slice(0, 50);
-    setAuditLogs(nextAudit);
-    localStorage.setItem('cybershield_audit_logs', JSON.stringify(nextAudit));
   }
 
   function getStatus(item) {
-    const key = item.id ? `ID-${item.id}` : `IP-${item.source_ip}`;
-    return statusMap[key] || 'OPEN';
+    return statusMap[item.id] || 'OPEN';
   }
 
   function formatTime(timestamp) {
@@ -154,7 +169,7 @@ export default function Incidents() {
             ) : (
               auditLogs.map((log) => (
                 <div key={log.id} className="audit-item">
-                  <div className="audit-meta"><span>{log.user}</span><span className="mono">{log.time}</span></div>
+                  <div className="audit-meta"><span>{log.username}</span><span className="mono">{formatTime(log.timestamp)}</span></div>
                   <div className="audit-action">{log.action}</div>
                   <div className="audit-target mono">{log.target}</div>
                 </div>

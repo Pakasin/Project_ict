@@ -10,12 +10,14 @@ Transparent proxy ที่ intercept HTTP/HTTPS requests
 
 import requests
 import os
-import joblib
-import numpy as np
+import sys
+import json
 import tensorflow as tf
-from tensorflow.keras.preprocessing.sequence import pad_sequences
 from datetime import datetime
 from dotenv import load_dotenv
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
+from backend.inference import predict_sqli  # noqa: E402
 
 load_dotenv()
 
@@ -23,11 +25,13 @@ load_dotenv()
 INTERNAL_URL = "http://localhost:8000/internal/event"
 INTERNAL_TOKEN = os.getenv("INTERNAL_TOKEN", "")
 THRESHOLD = float(os.getenv("THRESHOLD_SQLI", "0.75"))
+MODELS_DIR = os.path.join(os.path.dirname(__file__), "..", "models")
 
 # ===== โหลด Model + Tokenizer (ครั้งเดียวตอน startup) =====
 print("🔍 Loading SQLi model and tokenizer...")
-model_sqli = tf.keras.models.load_model("backend/models/lstm_sqli.h5")
-tokenizer = joblib.load("backend/models/tokenizer_sqli.pkl")
+model_sqli = tf.keras.models.load_model(os.path.join(MODELS_DIR, "best_sqli.keras"))
+with open(os.path.join(MODELS_DIR, "sqli_tokenizer.json"), encoding="utf-8") as f:
+    word_index = json.load(f)
 print("✅ SQLi model loaded")
 
 
@@ -45,14 +49,7 @@ class SQLiAddon:
             # รวม URL + request body เป็น input text
             query = flow.request.url + " " + flow.request.get_text()
 
-            # Tokenize + pad (maxlen=200 ตาม training config)
-            seq = pad_sequences(
-                tokenizer.texts_to_sequences([query]),
-                maxlen=200,
-            )
-
-            # Predict
-            confidence = float(model_sqli.predict(seq, verbose=0)[0][0])
+            _, confidence, _ = predict_sqli(model_sqli, word_index, THRESHOLD, query)
 
             if confidence >= THRESHOLD:
                 source_ip = flow.client_conn.address[0]

@@ -53,12 +53,6 @@ export default function Login({ onLoginSuccess }) {
     setSuccessMsg(null)
 
     try {
-      if (loginUsername.trim().toLowerCase() === 'admin' && loginPassword === 'admin12345') {
-        playSound('success')
-        onLoginSuccess('admin', 'SOC Lead Operator', 'admin@cybershield.th', { name: 'admin', lastname: 'Administrator', phone: '-' })
-        return
-      }
-
       const localUsers = JSON.parse(localStorage.getItem('cybershield_registered_operators') || '[]')
       const foundUser = localUsers.find(
         (u) => u.username.toLowerCase() === loginUsername.trim().toLowerCase() && u.password === loginPassword

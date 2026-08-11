@@ -26,28 +26,39 @@ async def lifespan(app: FastAPI):
     import tensorflow as tf
     import joblib
     from backend.db import init_db
+    from backend.inference import load_model_artifacts
 
     # สร้าง database tables ถ้ายังไม่มี
     init_db()
 
     # --- โหลด models ---
+    # Flow Model: best_GRU.keras (71 features, GRU) คือ artifact จริงที่ serve
+    # ห้ามใช้ best.keras (78 features, LSTM) — ตัวนั้นมี 7 fingerprint features
+    # ที่ทำให้ f1 ปลอม 0.9999 (ดู CLAUDE.md) เก็บไว้เป็นหลักฐานเปรียบเทียบเท่านั้น
     app.state.model_intrusion = tf.keras.models.load_model(
         str(MODELS_DIR / "best_nslkdd_smote.keras")
     )
     app.state.model_flow = tf.keras.models.load_model(
-        str(MODELS_DIR / "best.keras")
+        str(MODELS_DIR / "best_GRU.keras")
     )
-    
-    # Injection Model (SQLi) ยังไม่เสร็จ
-    app.state.model_sqli = None
+    app.state.model_sqli = tf.keras.models.load_model(
+        str(MODELS_DIR / "best_sqli.keras")
+    )
 
     # --- โหลด scalers (fit บน train set เท่านั้น) ---
     app.state.scaler_intrusion = joblib.load(str(MODELS_DIR / "scaler_nslkdd.pkl"))
     app.state.label_encoders_intrusion = joblib.load(str(MODELS_DIR / "label_encoders_nslkdd.pkl"))
     app.state.scaler_flow = joblib.load(str(MODELS_DIR / "scaler_csecicids2018.pkl"))
 
-    # --- โหลด tokenizer สำหรับ SQLi (Keras Tokenizer, vocab=10000) ---
-    app.state.tokenizer_sqli = None
+    # --- โหลด metadata + feature-slice map + sqli word_index ---
+    artifacts = load_model_artifacts()
+    app.state.model_metadata = artifacts["model_metadata"]
+    app.state.sqli_metadata = artifacts["sqli_metadata"]
+    app.state.flow_raw_cols = artifacts["raw_cols"]
+    app.state.flow_trained_cols = artifacts["trained_cols"]
+    app.state.flow_keep_idx = artifacts["flow_keep_idx"]
+    app.state.flow_classes = artifacts["flow_classes"]
+    app.state.sqli_word_index = artifacts["sqli_word_index"]
 
     print("✅ LSTM models + scalers loaded successfully")
     yield
@@ -68,13 +79,14 @@ app.add_middleware(
 )
 
 # --- Include Routers ---
-from backend.routes import auth, predict, internal, logs, ws  # noqa: E402
+from backend.routes import auth, predict, internal, logs, ws, incidents  # noqa: E402
 
 app.include_router(auth.router)
 app.include_router(predict.router)
 app.include_router(internal.router)
 app.include_router(logs.router)
 app.include_router(ws.router)
+app.include_router(incidents.router)
 
 
 # --- Serve React static files (production) ---

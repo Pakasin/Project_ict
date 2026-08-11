@@ -24,8 +24,8 @@ _Avoid_: network model, UNSW model, UNSW-NB15 model
 LSTM model trained on CSE-CIC-IDS2018 (using 02-14, 02-16, 02-21 subsets). Specializes in DDoS, DoS, and BruteForce classes (4-class: BENIGN/DoS/DDoS/BruteForce — PortScan excluded, absent from dataset). Input: Network Sensor features. Test results: Accuracy/Precision/Recall/F1 all ≈ 0.993.
 _Avoid_: CSE-CIC-IDS2018 model, traffic model
 
-**Injection Model (SQLi)** — ⏳ not started:
-LSTM model trained on SecLists SQLi dataset. Binary classifier: Normal vs SQL Injection. Input: HTTP Sensor request text. `train_sqli.py` not yet audited — per lessons from the other two models, verify actual label/data format before trusting existing docstrings/comments.
+**Injection Model (SQLi)** — ✅ complete:
+LSTM model (char-level Embedding, vocab=106, maxlen=221). Binary classifier: Normal vs SQLi, threshold 0.75. Input: HTTP Sensor request text, encoded char-by-char (see `backend/inference.py::encode_sqli_text`). Artifacts: `best_sqli.keras` + `sqli_tokenizer.json` + `sqli_model_metadata.json`. `notebooks/train_sqli.py` describes a *different* word-level pipeline (vocab=10000, maxlen=200) that does **not** match the shipped artifact — do not trust that script's docstrings for this model, treat `sqli_model_metadata.json` as ground truth.
 _Avoid_: SQLi model, text model
 
 ### Attack Classes
@@ -50,7 +50,7 @@ _Avoid_: SQLi model, text model
 
 **Flow**: A completed network connection record produced by the Network Sensor. One step in a Sliding Window. Partial windows (< 10 flows for a new source IP) are zero-padded — model is trained on padded samples to handle cold-start correctly.
 
-**Scaler**: Per-model `sklearn` StandardScaler saved as `.pkl` alongside `.h5`. Fit on training data only. Loaded at FastAPI startup and applied to all incoming features before LSTM inference. Files: `scaler_nslkdd.pkl`, `scaler_csecicids2018.pkl` (SQLi uses Embedding layer, no scaler needed). Intrusion Model also requires `label_encoders_nslkdd.pkl` (LabelEncoder for `protocol_type`/`service`/`flag`, fit on train+test combined to cover unseen categorical values).
+**Scaler**: Per-model `sklearn` StandardScaler saved as `.pkl`, fit on training data only. Loaded at FastAPI startup and applied to all incoming features before LSTM inference. Files: `scaler_nslkdd.pkl`, `scaler_csecicids2018.pkl` (SQLi uses an Embedding layer + char-level `sqli_tokenizer.json`, no scaler needed). Intrusion Model also requires `label_encoders_nslkdd.pkl` (LabelEncoder for `protocol_type`/`service`/`flag`, fit on train+test combined to cover unseen categorical values).
 
 **Sliding Window**: A rolling buffer of the 10 most recent Flows grouped by source IP (in theory). Forms one LSTM input sample of shape `(10, features)`. Grouping by source IP preserves per-attacker context. *(Note: see Known Limitations regarding Flow Model training)*
 

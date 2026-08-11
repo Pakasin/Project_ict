@@ -3,18 +3,32 @@ import { playSound } from '../utils/sound';
 import { useApp } from '../context/AppContext';
 import InfoHelp from '../components/InfoHelp';
 
+function sinceForRange(range) {
+  const now = Date.now();
+  if (range === '24h') return new Date(now - 24 * 60 * 60 * 1000).toISOString();
+  if (range === '7d') return new Date(now - 7 * 24 * 60 * 60 * 1000).toISOString();
+  return null;
+}
+
 export default function Analytics() {
   const { t, lang } = useApp();
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [timeRange, setTimeRange] = useState('all');
+  const [modelInfo, setModelInfo] = useState(null);
 
   useEffect(() => { fetchData(); }, [timeRange]);
+  useEffect(() => {
+    fetch('/api/model-info').then((res) => res.json()).then((data) => { if (data.ok) setModelInfo(data); }).catch(() => {});
+  }, []);
 
   async function fetchData() {
     setLoading(true);
     try {
-      const res = await fetch('/api/logs?limit=500');
+      const params = new URLSearchParams({ limit: '500' });
+      const since = sinceForRange(timeRange);
+      if (since) params.set('since', since);
+      const res = await fetch(`/api/logs?${params}`);
       const data = await res.json();
       if (data.ok) setLogs(data.data);
     } catch (err) {
@@ -35,9 +49,10 @@ export default function Analytics() {
     { key: 'u2r', th: 'U2R (User to Root)', en: 'U2R (User to Root)', color: 'var(--color-warning)' },
     { key: 'bruteforce', th: 'BruteForce', en: 'BruteForce', color: '#0EA5E9' },
     { key: 'sqli', th: 'SQL Injection', en: 'SQL Injection', color: '#0EA5E9' },
+    { key: 'other', th: 'อื่น ๆ / ไม่ทราบประเภท', en: 'Other / Unclassified', color: 'var(--color-neutral-600)' },
   ];
 
-  const attackCounts = { benign: 0, ddos: 0, dos: 0, sqli: 0, r2l: 0, u2r: 0, bruteforce: 0 };
+  const attackCounts = { benign: 0, ddos: 0, dos: 0, sqli: 0, r2l: 0, u2r: 0, bruteforce: 0, other: 0 };
   logs.forEach((item) => {
     const cls = (item.attack_class || '').toLowerCase();
     if (cls === 'normal' || cls === 'benign') attackCounts.benign++;
@@ -47,11 +62,11 @@ export default function Analytics() {
     else if (cls === 'r2l') attackCounts.r2l++;
     else if (cls === 'u2r') attackCounts.u2r++;
     else if (cls.includes('brute')) attackCounts.bruteforce++;
-    else attackCounts.benign++;
+    else attackCounts.other++;
   });
 
   const hasData = logs.length > 0;
-  const displayCounts = hasData ? attackCounts : { benign: 342, ddos: 84, dos: 56, r2l: 23, u2r: 9, bruteforce: 67, sqli: 41 };
+  const displayCounts = hasData ? attackCounts : { benign: 342, ddos: 84, dos: 56, r2l: 23, u2r: 9, bruteforce: 67, sqli: 41, other: 0 };
   const displayTotal = Object.values(displayCounts).reduce((a, b) => a + b, 0) || 1;
   const spectrumRows = attackKeys.map((k) => ({
     label: k[lang], count: displayCounts[k.key], pct: ((displayCounts[k.key] / displayTotal) * 100).toFixed(1), color: k.color
@@ -67,13 +82,17 @@ export default function Analytics() {
   ];
   const mitreRows = mitreData.map((r) => ({ tactic: r.tactic[lang], id: r.id, technique: r.technique[lang], severity: r.severity[lang] }));
 
-  // Dataset names & feature counts follow CLAUDE.md (source of truth for
-  // model facts): Intrusion Model = NSL-KDD (10,41); Flow Model serves 71
-  // features after dropping the 7 fingerprint columns from the raw 78.
+  // Input shapes read from /api/model-info (live artifact metadata) instead
+  // of hardcoding — acc/f1/latency are shown only where CLAUDE.md documents
+  // a real measured figure (Flow Model f1_macro 0.9534); everything else
+  // shows "—" rather than a fabricated number.
+  const intrusionShape = modelInfo?.intrusion?.input_shape;
+  const flowShape = modelInfo?.flow?.input_shape;
+  const sqliMeta = modelInfo?.sqli?.metadata;
   const telemetryData = [
-    { tag: 'INTRUSION', name: 'Intrusion LSTM (NSL-KDD)', desc: { th: 'ตรวจจับความผิดปกติแบบ zero-day และการยกระดับสิทธิ์ R2L/U2R', en: 'Detects zero-day anomalies and R2L/U2R privilege escalation.' }, inputShape: '41 features', acc: '82.3%', f1: '0.790', latency: '0.4 ms' },
-    { tag: 'FLOW', name: 'Flow LSTM (CSE-CIC-IDS2018)', desc: { th: 'ตรวจสอบ DDoS, DoS และรูปแบบ Brute Force', en: 'Monitors volumetric DDoS, DoS, and Brute Force patterns.' }, inputShape: '71 features', acc: '95.3%', f1: '0.953', latency: '2.1 ms' },
-    { tag: 'SQLI', name: 'Injection LSTM (SQLi)', desc: { th: 'ตรวจสอบ query string และ payload สำหรับ SQL injection', en: 'Inspects query strings and payloads for SQL injection.' }, inputShape: '200-token embedding', acc: '98.9%', f1: '0.987', latency: '2.6 ms' },
+    { tag: 'INTRUSION', name: 'Intrusion LSTM (NSL-KDD)', desc: { th: 'ตรวจจับความผิดปกติแบบ zero-day และการยกระดับสิทธิ์ R2L/U2R', en: 'Detects zero-day anomalies and R2L/U2R privilege escalation.' }, inputShape: intrusionShape ? `${intrusionShape.n_features} features` : '—', acc: '—', f1: '—', latency: '—' },
+    { tag: 'FLOW', name: 'Flow LSTM (CSE-CIC-IDS2018)', desc: { th: 'ตรวจสอบ DDoS, DoS และรูปแบบ Brute Force', en: 'Monitors volumetric DDoS, DoS, and Brute Force patterns.' }, inputShape: flowShape ? `${flowShape.n_features} features` : '—', acc: '—', f1: '0.9534', latency: '—' },
+    { tag: 'SQLI', name: 'Injection LSTM (SQLi)', desc: { th: 'ตรวจสอบ query string และ payload สำหรับ SQL injection', en: 'Inspects query strings and payloads for SQL injection.' }, inputShape: sqliMeta ? `${sqliMeta.max_len}-char embedding` : '—', acc: '—', f1: '—', latency: '—' },
   ];
 
   return (

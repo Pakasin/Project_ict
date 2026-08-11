@@ -23,7 +23,7 @@ export const STR = {
       signupSuccessNotice: "สมัครสมาชิกสำเร็จ กรุณาเข้าสู่ระบบด้วยชื่อผู้ใช้และรหัสผ่านที่สมัครไว้",
       secureBadge: "พอร์ทัลเข้ารหัสปลอดภัย",
       footerNote: "สำหรับเจ้าหน้าที่ที่ได้รับอนุญาตและผู้ใช้ทั่วไปที่ลงทะเบียนแล้วเท่านั้น",
-      adminHint: "บัญชีผู้ดูแล: admin / admin12345 หรือสมัครสมาชิกทั่วไป",
+      adminHint: "บัญชีผู้ดูแลกำหนดค่าไว้ที่เซิร์ฟเวอร์ (.env) หรือสมัครสมาชิกทั่วไป",
       welcomeBack: "ยินดีต้อนรับกลับ", signinSubtitle: "เข้าสู่ระบบเพื่อดูฟีดตรวจจับภัยคุกคามแบบสด",
       signupSubtitle: "สร้างบัญชีผู้ใช้ทั่วไปเพื่อเข้าถึงแดชบอร์ด",
       sideFooter: "เซ็นเซอร์ทั้งหมดออนไลน์และเฝ้าระวังอยู่",
@@ -83,7 +83,7 @@ export const STR = {
       executeBtn: "ประมวลผลด้วยโมเดล", resultConfidence: "ความเชื่อมั่น", resultLatency: "เวลาประมวลผล",
       readOnlyNotice: "บัญชีทั่วไปดูผลได้อย่างเดียว ไม่สามารถแก้ไขหรือประมวลผลได้",
       presetR2l: "R2L Buffer Exploit", presetU2r: "U2R Root Escalation", presetNormal: "Normal Baseline",
-      presetDdos: "SYN Flood DDoS", presetDos: "Slowloris DoS", presetPortscan: "PortScan Sweep", presetBenign: "BENIGN",
+      presetDdos: "SYN Flood DDoS", presetDos: "Slowloris DoS", presetBenign: "BENIGN",
       resultThreat: "ตรวจพบภัยคุกคาม", resultSafe: "ทราฟฟิกปกติ", probSpectrum: "การกระจายความน่าจะเป็น (Softmax)"
     },
     settings: {
@@ -170,7 +170,7 @@ export const STR = {
       signupSuccessNotice: "Account created. Please sign in with your new username and password.",
       secureBadge: "Secure Encrypted Portal",
       footerNote: "Authorized security personnel and registered general users only.",
-      adminHint: "Admin account: admin / admin12345, or register a general account",
+      adminHint: "Admin account is configured server-side (.env), or register a general account",
       welcomeBack: "Welcome back", signinSubtitle: "Sign in to view the live threat detection feed",
       signupSubtitle: "Create a general user account to access the dashboard",
       sideFooter: "All sensors online and monitoring",
@@ -230,7 +230,7 @@ export const STR = {
       executeBtn: "Execute Model Inference", resultConfidence: "Confidence", resultLatency: "Latency",
       readOnlyNotice: "General accounts can view results only — testing is admin-only.",
       presetR2l: "R2L Buffer Exploit", presetU2r: "U2R Root Escalation", presetNormal: "Normal Baseline",
-      presetDdos: "SYN Flood DDoS", presetDos: "Slowloris DoS", presetPortscan: "PortScan Sweep", presetBenign: "BENIGN",
+      presetDdos: "SYN Flood DDoS", presetDos: "Slowloris DoS", presetBenign: "BENIGN",
       resultThreat: "Threat Detected", resultSafe: "Benign Traffic Confirmed", probSpectrum: "Softmax Class Probability Spectrum"
     },
     settings: {

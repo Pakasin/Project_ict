@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { playSound } from '../utils/sound'
 import { useApp } from '../context/AppContext'
 import InfoHelp from '../components/InfoHelp'
@@ -9,10 +9,15 @@ export default function Test() {
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState(null)
   const [error, setError] = useState(null)
+  const [modelInfo, setModelInfo] = useState(null)
 
   const [sqliPayload, setSqliPayload] = useState("' OR 1=1 --")
   const [intrusionFeatures, setIntrusionFeatures] = useState(Array(41).fill('0'))
   const [flowFeatures, setFlowFeatures] = useState(Array(78).fill('0'))
+
+  useEffect(() => {
+    fetch('/api/model-info').then((res) => res.json()).then((data) => { if (data.ok) setModelInfo(data) }).catch(() => {})
+  }, [])
 
   function loadIntrusionPreset(scenario) {
     if (isGeneralView) return
@@ -30,7 +35,6 @@ export default function Test() {
     const next = Array(78).fill('0')
     if (scenario === 'ddos') { next[0]='80'; next[1]='150'; next[2]='8500'; next[14]='145000'; next[18]='1.2'; next[38]='1' }
     else if (scenario === 'dos') { next[0]='443'; next[1]='115000000'; next[2]='12'; next[14]='0.12'; next[67]='1' }
-    else if (scenario === 'portscan') { next[0]='3389'; next[1]='45'; next[14]='85000'; next[38]='1'; next[41]='1' }
     else if (scenario === 'benign') { next[0]='443'; next[1]='45000'; next[2]='18'; next[3]='24'; next[14]='840' }
     setFlowFeatures(next)
   }
@@ -74,7 +78,8 @@ export default function Test() {
     'dst_host_rerror_rate', 'dst_host_srv_rerror_rate',
   ]
 
-  const isMalicious = result && result.predicted_class !== 'Normal' && result.predicted_class !== 'BENIGN'
+  const isMalicious = !!result && result.predicted_class !== 'Normal' && result.predicted_class !== 'BENIGN'
+  const flowIgnoredNames = modelInfo?.flow ? modelInfo.flow.raw_feature_names.filter((n) => !modelInfo.flow.trained_feature_names.includes(n)) : []
 
   const MODEL_TABS = [
     { key: 'sqli', label: t.manual.tabSql, desc: 'SQLi · Embedding LSTM', icon: 'icon-box-green', help: 'sqliModelHelp', path: "M12 3 4.5 12c0 5 3.5 8.5 7.5 9 4-1.5 7.5-4.5 7.5-9L19.5 3zm-4 9 3 3 5-5" },
@@ -162,22 +167,25 @@ export default function Test() {
         {activeTab === 'flow' && (
           <>
             <div className="preset-toolbar" style={{ justifyContent: 'space-between' }}>
-              <p className="text-muted" style={{ fontSize: 13, margin: 0 }}>78 volumetric flow features — classifies DoS, DDoS, and BruteForce.</p>
+              <p className="text-muted" style={{ fontSize: 13, margin: 0 }}>78 raw flow features (7 fingerprint columns dropped server-side) — classifies DoS, DDoS, and BruteForce.</p>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                 <button className="btn btn-secondary" disabled={isGeneralView} onClick={() => loadFlowPreset('ddos')}>{t.manual.presetDdos}</button>
                 <button className="btn btn-secondary" disabled={isGeneralView} onClick={() => loadFlowPreset('dos')}>{t.manual.presetDos}</button>
-                <button className="btn btn-secondary" disabled={isGeneralView} onClick={() => loadFlowPreset('portscan')}>{t.manual.presetPortscan}</button>
                 <button className="btn btn-secondary" disabled={isGeneralView} onClick={() => loadFlowPreset('benign')}>{t.manual.presetBenign}</button>
               </div>
             </div>
             <div className="features-grid-scroll">
-              {flowFeatures.map((val, i) => (
-                <div key={i}>
-                  <label>flow_feat_{i}</label>
-                  <input className="input mono" type="number" step="any" value={val} disabled={isGeneralView}
-                    onChange={(e) => updateFeature(flowFeatures, setFlowFeatures, i, e.target.value)} style={{ padding: '4px 8px', fontSize: 12 }} />
-                </div>
-              ))}
+              {flowFeatures.map((val, i) => {
+                const name = modelInfo?.flow?.raw_feature_names?.[i] || `flow_feat_${i}`
+                const ignored = flowIgnoredNames.includes(name)
+                return (
+                  <div key={i} style={ignored ? { opacity: 0.5 } : undefined}>
+                    <label title={ignored ? 'Dropped server-side (fingerprint feature) — not seen by the model' : undefined}>[{i}] {name}{ignored ? ' (ignored)' : ''}</label>
+                    <input className="input mono" type="number" step="any" value={val} disabled={isGeneralView}
+                      onChange={(e) => updateFeature(flowFeatures, setFlowFeatures, i, e.target.value)} style={{ padding: '4px 8px', fontSize: 12 }} />
+                  </div>
+                )
+              })}
             </div>
             <button className="btn btn-primary" style={{ alignSelf: 'flex-start' }} onClick={() => handlePredict('flow')} disabled={loading || isGeneralView}>
               {loading ? '...' : t.manual.executeBtn}
@@ -209,6 +217,10 @@ export default function Test() {
             </span>
             <div style={{ fontFamily: 'var(--font-heading)', fontSize: 28 }}>{result.predicted_class}</div>
           </div>
+
+          {result.caveat && (
+            <div className="text-muted" style={{ fontSize: 12, marginTop: 4 }}>⚠ {result.caveat}</div>
+          )}
 
           {result.all_probabilities && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>
