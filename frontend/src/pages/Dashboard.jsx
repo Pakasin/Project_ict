@@ -26,26 +26,58 @@ export default function Dashboard({ activeAlertsCount = 0 }) {
   const [connected, setConnected] = useState(false)
   const [selectedEvent, setSelectedEvent] = useState(null)
   const [stats, setStats] = useState({ total: 0, alerts: 0, intrusion: 0, flow: 0, sqli: 0 })
-  const [ppsHistory, setPpsHistory] = useState(() => Array(26).fill(0))
+  const CHART_BUCKETS = 26
+  const BUCKET_MS = 2000
+  const WINDOW_MS = CHART_BUCKETS * BUCKET_MS
+  const [ppsHistory, setPpsHistory] = useState(() => Array(CHART_BUCKETS).fill(0))
   const [lastUpdated, setLastUpdated] = useState('--:--:--')
   const wsRef = useRef(null)
-  // Running count of messages received, independent of the capped/rolling
-  // `events` list — used to derive a real per-interval rate instead of a
-  // monotonic (and thus visually flat) cumulative count.
-  const msgCountRef = useRef(0)
-  const lastPpsCountRef = useRef(0)
+  // Real event timestamps (ms epoch), seeded from /api/logs history and
+  // appended to live via the WS feed. The chart is rebucketed from these
+  // on every tick, so it reflects actual traffic distribution across the
+  // visible window instead of a counter that starts flat and only grows.
+  const eventTimesRef = useRef([])
+
+  function recordEventTime(timestamp) {
+    const ts = timestamp ? new Date(timestamp).getTime() : NaN
+    eventTimesRef.current.push(Number.isFinite(ts) ? ts : Date.now())
+  }
+
+  function rebucketPpsHistory() {
+    const now = Date.now()
+    const cutoff = now - WINDOW_MS
+    eventTimesRef.current = eventTimesRef.current.filter((ts) => ts >= cutoff)
+    const buckets = Array(CHART_BUCKETS).fill(0)
+    for (const ts of eventTimesRef.current) {
+      const age = now - ts
+      const idxFromEnd = Math.floor(age / BUCKET_MS)
+      const idx = CHART_BUCKETS - 1 - idxFromEnd
+      if (idx >= 0 && idx < CHART_BUCKETS) buckets[idx] += 1
+    }
+    setPpsHistory(buckets)
+  }
 
   useEffect(() => {
     connectWebSocket()
+    fetchHistory()
     return () => { if (wsRef.current) wsRef.current.close() }
   }, [])
 
+  async function fetchHistory() {
+    try {
+      const res = await fetch('/api/logs?limit=200')
+      const data = await res.json()
+      if (data.ok && Array.isArray(data.data)) {
+        data.data.forEach((item) => recordEventTime(item.timestamp))
+        rebucketPpsHistory()
+      }
+    } catch (err) {
+      console.warn('Failed to load packet-speed history:', err)
+    }
+  }
+
   useEffect(() => {
-    const interval = setInterval(() => {
-      const delta = Math.max(0, msgCountRef.current - lastPpsCountRef.current)
-      lastPpsCountRef.current = msgCountRef.current
-      setPpsHistory((prev) => [...prev.slice(1), delta])
-    }, 2000)
+    const interval = setInterval(rebucketPpsHistory, BUCKET_MS)
     return () => clearInterval(interval)
   }, [])
 
@@ -63,7 +95,7 @@ export default function Dashboard({ activeAlertsCount = 0 }) {
         const data = JSON.parse(e.data)
         if (data.type === 'ping') return
 
-        msgCountRef.current += 1
+        recordEventTime(data.timestamp)
         setEvents((prev) => [data, ...prev].slice(0, 100))
         setLastUpdated(new Date().toLocaleTimeString('th-TH', { hour12: false }))
         setStats((prev) => ({
