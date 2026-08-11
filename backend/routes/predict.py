@@ -14,20 +14,31 @@ GET /api/model-info — metadata ของทั้ง 3 โมเดล (class 
 input shapes) ใช้โดย Test page (ชื่อ feature) และ Analytics (telemetry)
 """
 
+import json
 import os
+from pathlib import Path
 
 from fastapi import APIRouter, Request, HTTPException
 from pydantic import BaseModel
 
-from backend.inference import predict_intrusion, predict_flow, predict_sqli
+from backend.inference import (
+    predict_intrusion,
+    predict_flow,
+    predict_sqli,
+    predict_intrusion_window,
+    predict_flow_window,
+)
 
 router = APIRouter(prefix="/api", tags=["predict"])
+
+FLOW_PRESETS_PATH = Path(__file__).parent.parent / "models" / "flow_test_presets.json"
 
 
 class PredictRequest(BaseModel):
     """Request body สำหรับ manual prediction"""
     model_name: str            # "intrusion" | "flow" | "sqli"
-    features: list[float] | None = None   # สำหรับ intrusion / flow
+    features: list[float] | None = None   # สำหรับ intrusion / flow — single flow, zero-padded to a window server-side
+    window: list[list[float]] | None = None  # สำหรับ intrusion / flow — real 10-row window (no padding), takes priority over `features`
     payload: str | None = None            # สำหรับ sqli (raw query text)
 
 
@@ -74,14 +85,25 @@ async def predict(body: PredictRequest, request: Request):
 
 
 async def _predict_intrusion(body: PredictRequest, request: Request) -> PredictResponse:
-    """Intrusion Model (NSL-KDD) — 41 features → 3-class softmax"""
-    if not body.features or len(body.features) != 41:
-        raise HTTPException(status_code=400, detail="Intrusion Model requires exactly 41 features")
+    """Intrusion Model (NSL-KDD) — 41 features → 3-class softmax
 
+    `window` (10 real rows, no padding) is far more reliable than `features`
+    (single row zero-padded server-side) — the model was never trained on
+    padded windows. Prefer `window` whenever real chronological data exists.
+    """
     model = request.app.state.model_intrusion
     scaler = request.app.state.scaler_intrusion
 
-    predicted_class, confidence, all_probs = predict_intrusion(model, scaler, body.features)
+    if body.window:
+        if len(body.window) != 10 or any(len(row) != 41 for row in body.window):
+            raise HTTPException(status_code=400, detail="Intrusion window must be 10 rows of 41 features each")
+        predicted_class, confidence, all_probs = predict_intrusion_window(model, scaler, body.window)
+        caveat = None
+    else:
+        if not body.features or len(body.features) != 41:
+            raise HTTPException(status_code=400, detail="Intrusion Model requires exactly 41 features")
+        predicted_class, confidence, all_probs = predict_intrusion(model, scaler, body.features)
+        caveat = WINDOW_CAVEAT
 
     return PredictResponse(
         ok=True,
@@ -90,24 +112,38 @@ async def _predict_intrusion(body: PredictRequest, request: Request) -> PredictR
             predicted_class=predicted_class,
             confidence=confidence,
             all_probabilities=all_probs,
-            caveat=WINDOW_CAVEAT,
+            caveat=caveat,
         ),
     )
 
 
 async def _predict_flow(body: PredictRequest, request: Request) -> PredictResponse:
-    """Flow Model (CSE-CIC-IDS2018) — 78 raw features → scale → slice 71 → 4-class softmax"""
-    if not body.features or len(body.features) != 78:
-        raise HTTPException(status_code=400, detail="Flow Model requires exactly 78 raw features")
+    """Flow Model (CSE-CIC-IDS2018) — 78 raw features → scale → slice 71 → 4-class softmax
 
+    `window` (10 real rows, no padding) is far more reliable than `features`
+    (single row zero-padded server-side) — verified against held-out test-set
+    samples: single-flow zero-padded requests misclassify DoS/DDoS as BENIGN,
+    the full real window classifies all 4 classes correctly. Prefer `window`.
+    """
     model = request.app.state.model_flow
     scaler = request.app.state.scaler_flow
     flow_keep_idx = request.app.state.flow_keep_idx
     flow_classes = request.app.state.flow_classes
 
-    predicted_class, confidence, all_probs = predict_flow(
-        model, scaler, flow_keep_idx, flow_classes, body.features
-    )
+    if body.window:
+        if len(body.window) != 10 or any(len(row) != 78 for row in body.window):
+            raise HTTPException(status_code=400, detail="Flow window must be 10 rows of 78 raw features each")
+        predicted_class, confidence, all_probs = predict_flow_window(
+            model, scaler, flow_keep_idx, flow_classes, body.window
+        )
+        caveat = None
+    else:
+        if not body.features or len(body.features) != 78:
+            raise HTTPException(status_code=400, detail="Flow Model requires exactly 78 raw features")
+        predicted_class, confidence, all_probs = predict_flow(
+            model, scaler, flow_keep_idx, flow_classes, body.features
+        )
+        caveat = WINDOW_CAVEAT
 
     return PredictResponse(
         ok=True,
@@ -116,7 +152,7 @@ async def _predict_flow(body: PredictRequest, request: Request) -> PredictRespon
             predicted_class=predicted_class,
             confidence=confidence,
             all_probabilities=all_probs,
-            caveat=WINDOW_CAVEAT,
+            caveat=caveat,
         ),
     )
 
@@ -144,6 +180,20 @@ async def _predict_sqli(body: PredictRequest, request: Request) -> PredictRespon
             all_probabilities=all_probs,
         ),
     )
+
+
+@router.get("/flow-presets")
+async def flow_presets():
+    """Real held-out test-set samples (raw features + full 10-row window) per
+    Flow Model class — verified against best_GRU.keras to predict correctly
+    when submitted as a full window. Used by the Test page instead of
+    hand-typed numbers, which don't respect the dataset's correlated feature
+    structure and default the model to BENIGN (see CLAUDE.md Known Limitations)."""
+    if not FLOW_PRESETS_PATH.exists():
+        return {"ok": False, "error": "flow_test_presets.json not found", "classes": {}}
+    with open(FLOW_PRESETS_PATH, encoding="utf-8") as f:
+        data = json.load(f)
+    return {"ok": True, "classes": data["classes"]}
 
 
 @router.get("/model-info")

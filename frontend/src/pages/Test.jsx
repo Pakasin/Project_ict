@@ -14,9 +14,12 @@ export default function Test() {
   const [sqliPayload, setSqliPayload] = useState("' OR 1=1 --")
   const [intrusionFeatures, setIntrusionFeatures] = useState(Array(41).fill('0'))
   const [flowFeatures, setFlowFeatures] = useState(Array(78).fill('0'))
+  const [flowWindow, setFlowWindow] = useState(null)
+  const [flowPresets, setFlowPresets] = useState(null)
 
   useEffect(() => {
     fetch('/api/model-info').then((res) => res.json()).then((data) => { if (data.ok) setModelInfo(data) }).catch(() => {})
+    fetch('/api/flow-presets').then((res) => res.json()).then((data) => { if (data.ok) setFlowPresets(data.classes) }).catch(() => {})
   }, [])
 
   function loadIntrusionPreset(scenario) {
@@ -29,14 +32,18 @@ export default function Test() {
     setIntrusionFeatures(next)
   }
 
-  function loadFlowPreset(scenario) {
-    if (isGeneralView) return
+  // Real held-out test-set samples from /api/flow-presets, keyed by feature
+  // name (matches modelInfo.flow.raw_feature_names order). Hand-typed numbers
+  // don't respect this dataset's correlated feature structure and the model
+  // defaults to BENIGN — verified against best_GRU.keras (see CLAUDE.md).
+  function loadFlowPreset(className) {
+    if (isGeneralView || !flowPresets || !modelInfo?.flow) return
     playSound('click'); setResult(null); setError(null)
-    const next = Array(78).fill('0')
-    if (scenario === 'ddos') { next[0]='80'; next[1]='150'; next[2]='8500'; next[14]='145000'; next[18]='1.2'; next[38]='1' }
-    else if (scenario === 'dos') { next[0]='443'; next[1]='115000000'; next[2]='12'; next[14]='0.12'; next[67]='1' }
-    else if (scenario === 'benign') { next[0]='443'; next[1]='45000'; next[2]='18'; next[3]='24'; next[14]='840' }
-    setFlowFeatures(next)
+    const sample = flowPresets[className]?.[0]
+    if (!sample) return
+    const names = modelInfo.flow.raw_feature_names
+    setFlowFeatures(names.map((n) => String(sample.features[n])))
+    setFlowWindow(sample.window_features.map((row) => names.map((n) => row[n])))
   }
 
   async function handlePredict(modelName) {
@@ -46,7 +53,10 @@ export default function Test() {
       let body = { model_name: modelName }
       if (modelName === 'sqli') body.payload = sqliPayload
       else if (modelName === 'intrusion') body.features = intrusionFeatures.map((v) => Number(v) || 0)
-      else if (modelName === 'flow') body.features = flowFeatures.map((v) => Number(v) || 0)
+      else if (modelName === 'flow') {
+        body.features = flowFeatures.map((v) => Number(v) || 0)
+        if (flowWindow) body.window = flowWindow
+      }
 
       const res = await fetch('/api/predict', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
       const data = await res.json()
@@ -66,6 +76,9 @@ export default function Test() {
   function updateFeature(features, setFeatures, index, value) {
     if (isGeneralView) return
     const updated = [...features]; updated[index] = value; setFeatures(updated)
+    // Manual edits invalidate the loaded real window — falls back to the
+    // single-row zero-padded path (with its accuracy caveat) server-side.
+    if (features === flowFeatures) setFlowWindow(null)
   }
 
   const nslFeatureNames = [
@@ -169,11 +182,14 @@ export default function Test() {
             <div className="preset-toolbar" style={{ justifyContent: 'space-between' }}>
               <p className="text-muted" style={{ fontSize: 13, margin: 0 }}>78 raw flow features (7 fingerprint columns dropped server-side) — classifies DoS, DDoS, and BruteForce.</p>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                <button className="btn btn-secondary" disabled={isGeneralView} onClick={() => loadFlowPreset('ddos')}>{t.manual.presetDdos}</button>
-                <button className="btn btn-secondary" disabled={isGeneralView} onClick={() => loadFlowPreset('dos')}>{t.manual.presetDos}</button>
-                <button className="btn btn-secondary" disabled={isGeneralView} onClick={() => loadFlowPreset('benign')}>{t.manual.presetBenign}</button>
+                <button className="btn btn-secondary" disabled={isGeneralView || !flowPresets} onClick={() => loadFlowPreset('DDoS')}>{t.manual.presetDdos}</button>
+                <button className="btn btn-secondary" disabled={isGeneralView || !flowPresets} onClick={() => loadFlowPreset('DoS')}>{t.manual.presetDos}</button>
+                <button className="btn btn-secondary" disabled={isGeneralView || !flowPresets} onClick={() => loadFlowPreset('BruteForce')}>{t.manual.presetBruteforce}</button>
+                <button className="btn btn-secondary" disabled={isGeneralView || !flowPresets} onClick={() => loadFlowPreset('BENIGN')}>{t.manual.presetBenign}</button>
+                <InfoHelp id="realWindowPreset" />
               </div>
             </div>
+            {flowWindow && <div className="tag tag-accent" style={{ fontSize: 11, alignSelf: 'flex-start' }}>{t.manual.realWindowLoaded}</div>}
             <div className="features-grid-scroll">
               {flowFeatures.map((val, i) => {
                 const name = modelInfo?.flow?.raw_feature_names?.[i] || `flow_feat_${i}`

@@ -83,7 +83,8 @@ export const STR = {
       executeBtn: "ประมวลผลด้วยโมเดล", resultConfidence: "ความเชื่อมั่น", resultLatency: "เวลาประมวลผล",
       readOnlyNotice: "บัญชีทั่วไปดูผลได้อย่างเดียว ไม่สามารถแก้ไขหรือประมวลผลได้",
       presetR2l: "R2L Buffer Exploit", presetU2r: "U2R Root Escalation", presetNormal: "Normal Baseline",
-      presetDdos: "SYN Flood DDoS", presetDos: "Slowloris DoS", presetBenign: "BENIGN",
+      presetDdos: "SYN Flood DDoS", presetDos: "Slowloris DoS", presetBruteforce: "BruteForce", presetBenign: "BENIGN",
+      realWindowLoaded: "โหลดหน้าต่างข้อมูลจริง 10 แถวจาก test set แล้ว — ผลลัพธ์แม่นยำ ไม่ใช่การประมาณจาก 1 แถว",
       resultThreat: "ตรวจพบภัยคุกคาม", resultSafe: "ทราฟฟิกปกติ", probSpectrum: "การกระจายความน่าจะเป็น (Softmax)"
     },
     settings: {
@@ -146,7 +147,8 @@ export const STR = {
       firewallHelp: { title: "ไฟร์วอลล์", desc: "ระบบที่ตรวจสอบและกักกัน IP ที่มีพฤติกรรมน่าสงสัยไม่ให้เชื่อมต่อกับเครือข่าย" },
       quarantineIp: { title: "IP ที่ถูกกักกัน", desc: "IP ที่ถูกระบบไฟร์วอลล์กักกันไว้ เพื่อป้องกันไม่ให้เชื่อมต่อหรือส่งทราฟฟิกตามเงื่อนไขที่กำหนด" },
       unblockHelp: { title: "ปลดบล็อก", desc: "ยกเลิกการกักกัน IP นี้ และอนุญาตให้กลับมาเชื่อมต่อได้ตามกฎของระบบ" },
-      simulateBlockHelp: { title: "จำลองการบล็อก", desc: "จำลองการบล็อก IP เพื่อทดสอบการทำงานของระบบ โดยใช้พฤติกรรมเดิมที่ระบบรองรับอยู่" }
+      simulateBlockHelp: { title: "จำลองการบล็อก", desc: "จำลองการบล็อก IP เพื่อทดสอบการทำงานของระบบ โดยใช้พฤติกรรมเดิมที่ระบบรองรับอยู่" },
+      realWindowPreset: { title: "Preset จากข้อมูลจริง", desc: "ปุ่มเหล่านี้โหลดตัวอย่างจาก test set จริง (ไม่เคยใช้เทรน) ทั้ง 10 แถวติดกัน ต่างจากการพิมพ์เลขเองที่ feature ไม่สอดคล้องกันและโมเดลมักทายเป็น BENIGN ผิดพลาด" }
     }
   },
   en: {
@@ -230,7 +232,8 @@ export const STR = {
       executeBtn: "Execute Model Inference", resultConfidence: "Confidence", resultLatency: "Latency",
       readOnlyNotice: "General accounts can view results only — testing is admin-only.",
       presetR2l: "R2L Buffer Exploit", presetU2r: "U2R Root Escalation", presetNormal: "Normal Baseline",
-      presetDdos: "SYN Flood DDoS", presetDos: "Slowloris DoS", presetBenign: "BENIGN",
+      presetDdos: "SYN Flood DDoS", presetDos: "Slowloris DoS", presetBruteforce: "BruteForce", presetBenign: "BENIGN",
+      realWindowLoaded: "Loaded a real 10-row test-set window — result is accurate, not a single-row approximation",
       resultThreat: "Threat Detected", resultSafe: "Benign Traffic Confirmed", probSpectrum: "Softmax Class Probability Spectrum"
     },
     settings: {
@@ -293,7 +296,8 @@ export const STR = {
       firewallHelp: { title: "Firewall", desc: "The system that inspects and quarantines suspicious IPs from connecting to the network." },
       quarantineIp: { title: "Quarantined IP", desc: "An IP address quarantined by the firewall to prevent traffic according to configured security rules." },
       unblockHelp: { title: "Unblock", desc: "Removes the IP from quarantine and allows traffic again according to firewall rules." },
-      simulateBlockHelp: { title: "Simulate Block", desc: "Simulates an IP block using the system's existing test behavior." }
+      simulateBlockHelp: { title: "Simulate Block", desc: "Simulates an IP block using the system's existing test behavior." },
+      realWindowPreset: { title: "Real-Data Presets", desc: "These buttons load a genuine 10-row window from the held-out test set (never used in training). Hand-typed numbers don't respect real feature correlations and the model usually misclassifies them as BENIGN." }
     }
   }
 };
