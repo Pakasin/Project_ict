@@ -8,6 +8,7 @@ export const STR = {
     defconSub: "ทุกภาคส่วนปลอดภัย",
     logout: "ออกจากระบบ",
     nav: { dashboard: "แดชบอร์ด", analytics: "การวิเคราะห์", incidents: "เหตุการณ์", logs: "บันทึกเหตุการณ์", manualTest: "ทดสอบด้วยตนเอง", settings: "ตั้งค่า" },
+    access: { title: "ไม่มีสิทธิ์เข้าถึง", desc: "หน้านี้สงวนเฉพาะผู้ดูแลระบบเท่านั้น บัญชีของคุณไม่มีสิทธิ์เข้าถึงส่วนนี้", back: "กลับสู่แดชบอร์ด" },
     login: {
       tabSignin: "เข้าสู่ระบบ", tabSignup: "สมัครสมาชิก",
       usernameLabel: "ชื่อผู้ใช้หรืออีเมล", usernamePh: "กรอกชื่อผู้ใช้หรืออีเมล", passwordLabel: "รหัสผ่าน", passwordPh: "กรอกรหัสผ่าน",
@@ -143,6 +144,7 @@ export const STR = {
     defconSub: "All sectors secure",
     logout: "Log out",
     nav: { dashboard: "Dashboard", analytics: "Analytics", incidents: "Incidents", logs: "Logs", manualTest: "Manual Test", settings: "Settings" },
+    access: { title: "Access Denied", desc: "This section is for administrators only. Your account does not have permission to access it.", back: "Back to Dashboard" },
     login: {
       tabSignin: "Sign In", tabSignup: "Sign Up",
       usernameLabel: "Username or Email", usernamePh: "Enter username or email", passwordLabel: "Password", passwordPh: "Enter your password",

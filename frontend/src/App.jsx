@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { Routes, Route, NavLink, useNavigate } from 'react-router-dom'
+import { Routes, Route, NavLink, useNavigate, useLocation } from 'react-router-dom'
 import Dashboard from './pages/Dashboard'
 import Logs from './pages/Logs'
 import Test from './pages/Test'
@@ -10,6 +10,12 @@ import Settings from './pages/Settings'
 import { playSound } from './utils/sound'
 import { AppProvider, useApp } from './context/AppContext'
 import InfoHelp from './components/InfoHelp'
+import AccessDeniedModal from './components/AccessDeniedModal'
+
+// Routes only a real (or previewing) admin may view — mirrors the
+// server-side role split: Intrusion/Flow analysis, incident containment,
+// and historical logs are SOC-operator tooling, not general-user surface.
+const ADMIN_ONLY_PATHS = ['/analytics', '/incidents', '/logs']
 
 const ICONS = {
   dashboard: "M3 3h7v7H3V3zm11 0h7v7h-7V3zM3 14h7v7H3v-7zm11 0h7v7h-7v-7z",
@@ -29,17 +35,33 @@ function Icon({ d, size = 17 }) {
 }
 
 function AppShell({ auth, onLogout }) {
-  const { t, previewAsGeneral, setPreviewAsGeneral, isAdminActual } = useApp()
+  const { t, previewAsGeneral, setPreviewAsGeneral, isAdminActual, isGeneralView, setAccessDeniedOpen } = useApp()
   const [defcon, setDefcon] = useState(5)
   const [activeAlertsCount, setActiveAlertsCount] = useState(0)
   const [viewMenuOpen, setViewMenuOpen] = useState(false)
   const wsRef = useRef(null)
   const viewSwitcherRef = useRef(null)
+  const location = useLocation()
+  const navigate = useNavigate()
 
   useEffect(() => {
     connectGlobalWebSocket()
     return () => { if (wsRef.current) wsRef.current.close() }
   }, [])
+
+  // Guard admin-only routes: catches direct URL navigation and the case
+  // where an admin flips into general-user preview while already sitting
+  // on an admin-only page (route hiding alone doesn't cover either).
+  useEffect(() => {
+    if (isGeneralView && ADMIN_ONLY_PATHS.includes(location.pathname)) {
+      setAccessDeniedOpen(true)
+    }
+  }, [isGeneralView, location.pathname])
+
+  function dismissAccessDenied() {
+    setAccessDeniedOpen(false)
+    navigate('/')
+  }
 
   useEffect(() => {
     if (!viewMenuOpen) return
@@ -94,6 +116,7 @@ function AppShell({ auth, onLogout }) {
 
   return (
     <div className="app-layout">
+      <AccessDeniedModal onDismiss={dismissAccessDenied} />
       <aside className="sidebar">
         <div className="sidebar-header">
           <div className="sidebar-logo">
@@ -120,16 +143,22 @@ function AppShell({ auth, onLogout }) {
           <NavLink to="/" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`} onClick={() => playSound('click')} end>
             <span className="nav-icon"><Icon d={ICONS.dashboard} /></span>{t.nav.dashboard}
           </NavLink>
-          <NavLink to="/analytics" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`} onClick={() => playSound('click')}>
-            <span className="nav-icon"><Icon d={ICONS.analytics} /></span>{t.nav.analytics}
-          </NavLink>
-          <NavLink to="/incidents" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`} onClick={() => playSound('click')}>
-            <span className="nav-icon"><Icon d={ICONS.incidents} /></span>{t.nav.incidents}
-            {activeAlertsCount > 0 && <span className="nav-alert-pill mono">{activeAlertsCount}</span>}
-          </NavLink>
-          <NavLink to="/logs" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`} onClick={() => playSound('click')}>
-            <span className="nav-icon"><Icon d={ICONS.logs} /></span>{t.nav.logs}
-          </NavLink>
+          {!isGeneralView && (
+            <NavLink to="/analytics" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`} onClick={() => playSound('click')}>
+              <span className="nav-icon"><Icon d={ICONS.analytics} /></span>{t.nav.analytics}
+            </NavLink>
+          )}
+          {!isGeneralView && (
+            <NavLink to="/incidents" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`} onClick={() => playSound('click')}>
+              <span className="nav-icon"><Icon d={ICONS.incidents} /></span>{t.nav.incidents}
+              {activeAlertsCount > 0 && <span className="nav-alert-pill mono">{activeAlertsCount}</span>}
+            </NavLink>
+          )}
+          {!isGeneralView && (
+            <NavLink to="/logs" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`} onClick={() => playSound('click')}>
+              <span className="nav-icon"><Icon d={ICONS.logs} /></span>{t.nav.logs}
+            </NavLink>
+          )}
           <NavLink to="/test" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`} onClick={() => playSound('click')}>
             <span className="nav-icon"><Icon d={ICONS.manualTest} /></span>{t.nav.manualTest}
           </NavLink>

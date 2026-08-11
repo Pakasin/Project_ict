@@ -8,6 +8,7 @@ export function AppProvider({ auth, updateProfile, children }) {
   const [lang, setLang] = useState(() => localStorage.getItem('cybershield_lang') || 'th')
   const [previewAsGeneral, setPreviewAsGeneral] = useState(false)
   const [openHelpId, setOpenHelpId] = useState(null)
+  const [accessDeniedOpen, setAccessDeniedOpen] = useState(false)
 
   useEffect(() => {
     localStorage.setItem('cybershield_theme', theme)
@@ -22,6 +23,7 @@ export function AppProvider({ auth, updateProfile, children }) {
     setPreviewAsGeneral(false)
   }, [auth?.user])
 
+
   const t = STR[lang] || STR.th
   const isAdminActual = !!auth?.user && auth.role !== 'General User'
   const isGeneralView = auth?.role === 'General User' || (isAdminActual && previewAsGeneral)
@@ -34,6 +36,7 @@ export function AppProvider({ auth, updateProfile, children }) {
     previewAsGeneral, setPreviewAsGeneral,
     isAdminActual, isGeneralView,
     openHelpId, setOpenHelpId,
+    accessDeniedOpen, setAccessDeniedOpen,
   }
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>

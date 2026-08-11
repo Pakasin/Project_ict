@@ -1,11 +1,21 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { isSoundEnabled, setSoundEnabled as saveSoundEnabled, getVolume, setVolume as saveVolume, playSound } from '../utils/sound';
 import { useApp } from '../context/AppContext';
 import InfoHelp from '../components/InfoHelp';
 
 export default function Settings() {
-  const { t, lang, setLang, theme, setTheme, auth, updateProfile, previewAsGeneral, setPreviewAsGeneral, isAdminActual, isGeneralView } = useApp();
+  const { t, lang, setLang, theme, setTheme, auth, updateProfile, previewAsGeneral, setPreviewAsGeneral, isAdminActual, isGeneralView, setAccessDeniedOpen } = useApp();
   const [category, setCategory] = useState('profile');
+
+  // The firewall tab is admin-only (edge containment tooling). If an admin
+  // flips into general-user preview while sitting on it, bounce them out
+  // and surface the same access-denied modal the route guard uses.
+  useEffect(() => {
+    if (isGeneralView && category === 'firewall') {
+      setCategory('profile');
+      setAccessDeniedOpen(true);
+    }
+  }, [isGeneralView, category, setAccessDeniedOpen]);
 
   // Profile
   const [firstName, setFirstName] = useState(auth?.profile?.name || '');
@@ -94,7 +104,7 @@ export default function Settings() {
     { key: 'audio', label: t.settings.catAudio },
     { key: 'display', label: t.settings.catDisplay },
     ...(isAdminActual ? [{ key: 'role', label: t.settings.catRole }] : []),
-    { key: 'firewall', label: t.settings.catFirewall },
+    ...(isGeneralView ? [] : [{ key: 'firewall', label: t.settings.catFirewall }]),
   ];
 
   return (
