@@ -79,12 +79,13 @@ export const STR = {
     manual: {
       title: "แซนด์บ็อกซ์จำลองการโจมตีด้วยตนเอง", subtitle: "ป้อนข้อมูลตรงเข้าโมเดล LSTM ทั้ง 3 เพื่อทดสอบพฤติกรรมอย่างละเอียด",
       tabSql: "โมเดล SQL Injection", tabIntrusion: "โมเดลการบุกรุก (NSL-KDD)", tabFlow: "โมเดลกระแสข้อมูล (CSE-CIC-IDS2018)",
-      presetsLabel: "รูปแบบสำเร็จรูป:", presetBoolean: "Boolean Blind", presetStacked: "Stacked Query", presetUnion: "UNION Select", presetClean: "Clean Baseline",
       executeBtn: "ประมวลผลด้วยโมเดล", resultConfidence: "ความเชื่อมั่น", resultLatency: "เวลาประมวลผล",
       readOnlyNotice: "บัญชีทั่วไปดูผลได้อย่างเดียว ไม่สามารถแก้ไขหรือประมวลผลได้",
-      presetR2l: "R2L Buffer Exploit", presetU2r: "U2R Root Escalation", presetNormal: "Normal Baseline",
-      presetDdos: "SYN Flood DDoS", presetDos: "Slowloris DoS", presetBruteforce: "BruteForce", presetBenign: "BENIGN",
-      realWindowLoaded: "โหลดหน้าต่างข้อมูลจริง 10 แถวจาก test set แล้ว — ผลลัพธ์แม่นยำ ไม่ใช่การประมาณจาก 1 แถว",
+      randomizeBtn: "สุ่มสถานการณ์จำลอง", randomizeByClassLabel: "สุ่มตามคลาส:",
+      accuracyBanner: "โมเดลนี้แม่นยำ {pct}% จากการทดสอบจริง (test set: {truePct}%)",
+      sampleLoadedNotice: "โหลดตัวอย่างจริงจาก test set แล้ว — แก้ไขค่าจะยกเลิกการเทียบคำตอบจริง",
+      modelCorrect: "โมเดลทายถูก", modelIncorrect: "โมเดลทายผิด — คำตอบจริงคือ",
+      trueClassLabel: "คำตอบจริง", predictedLabel: "โมเดลทาย",
       resultThreat: "ตรวจพบภัยคุกคาม", resultSafe: "ทราฟฟิกปกติ", probSpectrum: "การกระจายความน่าจะเป็น (Softmax)"
     },
     settings: {
@@ -148,7 +149,7 @@ export const STR = {
       quarantineIp: { title: "IP ที่ถูกกักกัน", desc: "IP ที่ถูกระบบไฟร์วอลล์กักกันไว้ เพื่อป้องกันไม่ให้เชื่อมต่อหรือส่งทราฟฟิกตามเงื่อนไขที่กำหนด" },
       unblockHelp: { title: "ปลดบล็อก", desc: "ยกเลิกการกักกัน IP นี้ และอนุญาตให้กลับมาเชื่อมต่อได้ตามกฎของระบบ" },
       simulateBlockHelp: { title: "จำลองการบล็อก", desc: "จำลองการบล็อก IP เพื่อทดสอบการทำงานของระบบ โดยใช้พฤติกรรมเดิมที่ระบบรองรับอยู่" },
-      realWindowPreset: { title: "Preset จากข้อมูลจริง", desc: "ปุ่มเหล่านี้โหลดตัวอย่างจาก test set จริง (ไม่เคยใช้เทรน) ทั้ง 10 แถวติดกัน ต่างจากการพิมพ์เลขเองที่ feature ไม่สอดคล้องกันและโมเดลมักทายเป็น BENIGN ผิดพลาด" }
+      randomSampleHelp: { title: "สุ่มสถานการณ์จำลอง", desc: "สุ่มตัวอย่างจริงจาก test set ของโมเดล (ไม่เคยใช้เทรน) รวมทั้งกรณีที่โมเดลทายผิดด้วย ไม่ใช่การคัดเฉพาะกรณีที่ถูก — สะท้อนความแม่นยำจริงของโมเดล" }
     }
   },
   en: {
@@ -228,12 +229,13 @@ export const STR = {
     manual: {
       title: "Neural Sandbox & Manual Attack Simulation", subtitle: "Inject crafted payloads directly into the 3 deep LSTM models for precision testing",
       tabSql: "SQL Injection Model", tabIntrusion: "Intrusion LSTM (NSL-KDD)", tabFlow: "Flow LSTM (CSE-CIC-IDS2018)",
-      presetsLabel: "Attack presets:", presetBoolean: "Boolean Blind", presetStacked: "Stacked Query", presetUnion: "UNION Select", presetClean: "Clean Baseline",
       executeBtn: "Execute Model Inference", resultConfidence: "Confidence", resultLatency: "Latency",
       readOnlyNotice: "General accounts can view results only — testing is admin-only.",
-      presetR2l: "R2L Buffer Exploit", presetU2r: "U2R Root Escalation", presetNormal: "Normal Baseline",
-      presetDdos: "SYN Flood DDoS", presetDos: "Slowloris DoS", presetBruteforce: "BruteForce", presetBenign: "BENIGN",
-      realWindowLoaded: "Loaded a real 10-row test-set window — result is accurate, not a single-row approximation",
+      randomizeBtn: "Randomize Scenario", randomizeByClassLabel: "Randomize by class:",
+      accuracyBanner: "This model is {pct}% accurate on real test data (test set: {truePct}%)",
+      sampleLoadedNotice: "Loaded a real test-set sample — editing values cancels the true-answer comparison",
+      modelCorrect: "Model predicted correctly", modelIncorrect: "Model predicted incorrectly — the true answer is",
+      trueClassLabel: "True Class", predictedLabel: "Model Predicted",
       resultThreat: "Threat Detected", resultSafe: "Benign Traffic Confirmed", probSpectrum: "Softmax Class Probability Spectrum"
     },
     settings: {
@@ -297,7 +299,7 @@ export const STR = {
       quarantineIp: { title: "Quarantined IP", desc: "An IP address quarantined by the firewall to prevent traffic according to configured security rules." },
       unblockHelp: { title: "Unblock", desc: "Removes the IP from quarantine and allows traffic again according to firewall rules." },
       simulateBlockHelp: { title: "Simulate Block", desc: "Simulates an IP block using the system's existing test behavior." },
-      realWindowPreset: { title: "Real-Data Presets", desc: "These buttons load a genuine 10-row window from the held-out test set (never used in training). Hand-typed numbers don't respect real feature correlations and the model usually misclassifies them as BENIGN." }
+      randomSampleHelp: { title: "Randomize Scenario", desc: "Draws a real sample from the model's held-out test set (never used in training), including cases where the model got it wrong — not cherry-picked for correctness, so it reflects true model accuracy." }
     }
   }
 };

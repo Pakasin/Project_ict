@@ -1,0 +1,223 @@
+{
+  "generated_from": "SQLi test set (reconstructed seed=42), สุ่มตามสัดส่วนจริง",
+  "model": "best_sqli.keras",
+  "true_set_accuracy": 0.9969,
+  "sample_pool_accuracy": 1.0,
+  "note": "query สั้นไม่มี context มักทายผิด ตามข้อจำกัดจริง",
+  "classes": {
+    "Normal": [
+      {
+        "query": "livermore-kozlowski@hiteurope.ws",
+        "true_class": "Normal",
+        "predicted_class": "Normal",
+        "confidence": 0.0003,
+        "correct": true
+      },
+      {
+        "query": "severo",
+        "true_class": "Normal",
+        "predicted_class": "Normal",
+        "confidence": 0.0084,
+        "correct": true
+      },
+      {
+        "query": "SELECT rock ( s )  FROM addition SELECT gravity ( s ) ",
+        "true_class": "Normal",
+        "predicted_class": "Normal",
+        "confidence": 0.0003,
+        "correct": true
+      },
+      {
+        "query": "ilya",
+        "true_class": "Normal",
+        "predicted_class": "Normal",
+        "confidence": 0.0115,
+        "correct": true
+      },
+      {
+        "query": "SELECT * FROM read 3 SELECT * FROM because",
+        "true_class": "Normal",
+        "predicted_class": "Normal",
+        "confidence": 0.0003,
+        "correct": true
+      },
+      {
+        "query": "1.99281E+15",
+        "true_class": "Normal",
+        "predicted_class": "Normal",
+        "confidence": 0.0011,
+        "correct": true
+      },
+      {
+        "query": "SELECT * FROM difficult WHERE sick LIKE '%serve%'",
+        "true_class": "Normal",
+        "predicted_class": "Normal",
+        "confidence": 0.0003,
+        "correct": true
+      },
+      {
+        "query": "c/ hermanos pinzon 178",
+        "true_class": "Normal",
+        "predicted_class": "Normal",
+        "confidence": 0.0004,
+        "correct": true
+      },
+      {
+        "query": "SELECT * FROM piece WHERE twelve = 'ship'  AND City = 'excellent'",
+        "true_class": "Normal",
+        "predicted_class": "Normal",
+        "confidence": 0.0003,
+        "correct": true
+      },
+      {
+        "query": "21392437e",
+        "true_class": "Normal",
+        "predicted_class": "Normal",
+        "confidence": 0.0006,
+        "correct": true
+      },
+      {
+        "query": "SELECT * FROM mountain WHERE block BETWEEN modern09/01/1996dollar AND come15/31/1996love",
+        "true_class": "Normal",
+        "predicted_class": "Normal",
+        "confidence": 0.0003,
+        "correct": true
+      },
+      {
+        "query": "lo7ange",
+        "true_class": "Normal",
+        "predicted_class": "Normal",
+        "confidence": 0.001,
+        "correct": true
+      },
+      {
+        "query": "claros lafragueta",
+        "true_class": "Normal",
+        "predicted_class": "Normal",
+        "confidence": 0.0005,
+        "correct": true
+      },
+      {
+        "query": "SELECT MIN ( mud )  AS parallel FROM around",
+        "true_class": "Normal",
+        "predicted_class": "Normal",
+        "confidence": 0.0003,
+        "correct": true
+      },
+      {
+        "query": "SELECT * FROM vowel  WHERE layers NOT LIKE '[nearby]%'",
+        "true_class": "Normal",
+        "predicted_class": "Normal",
+        "confidence": 0.0003,
+        "correct": true
+      },
+      {
+        "query": "c/ corint, 13 11?a",
+        "true_class": "Normal",
+        "predicted_class": "Normal",
+        "confidence": 0.0022,
+        "correct": true
+      },
+      {
+        "query": "  SELECT * FROM double WHERE plane NOT IN  ( 'what', 'thus', 'travel' )  ",
+        "true_class": "Normal",
+        "predicted_class": "Normal",
+        "confidence": 0.0003,
+        "correct": true
+      },
+      {
+        "query": "hole@chicashumedas.at",
+        "true_class": "Normal",
+        "predicted_class": "Normal",
+        "confidence": 0.0006,
+        "correct": true
+      },
+      {
+        "query": "   SELECT COUNT ( coal ) , sink FROM act BY several",
+        "true_class": "Normal",
+        "predicted_class": "Normal",
+        "confidence": 0.0003,
+        "correct": true
+      }
+    ],
+    "SQLi": [
+      {
+        "query": "1\"  )   where 9295  =  9295 and 7756  =  dbms_utility.sqlid_to_sqlhash   (    (   chr  (  113  )  ||chr  (  113  )  ||chr  (  112  )  ||chr  (  106  )  ||chr  (  113  )  ||  (  select   (  case when   (  7756  =  7756  )   then 1 else 0 end  )   from dual  )  ||chr  (  113  )  ||chr  (  122  )  ||chr  (  118  )  ||chr  (  122  )  ||chr  (  113   )    )     )  --",
+        "true_class": "SQLi",
+        "predicted_class": "SQLi",
+        "confidence": 1.0,
+        "correct": true
+      },
+      {
+        "query": "1%'  )   or 2633  =  dbms_pipe.receive_message  (  chr  (  112  )  ||chr  (  65  )  ||chr  (  65  )  ||chr  (  103  )  ,5  )   and   (  '%'  =  '",
+        "true_class": "SQLi",
+        "predicted_class": "SQLi",
+        "confidence": 1.0,
+        "correct": true
+      },
+      {
+        "query": "select count  (  *  )   from rdb$fields as t1,rdb$types as t2,rdb$collations as t3,rdb$functions as t4 and    (    (   'vjdk' like 'vjdk",
+        "true_class": "SQLi",
+        "predicted_class": "SQLi",
+        "confidence": 1.0,
+        "correct": true
+      },
+      {
+        "query": "-6433%'   )    )    or 9323  =  9323#",
+        "true_class": "SQLi",
+        "predicted_class": "SQLi",
+        "confidence": 1.0,
+        "correct": true
+      },
+      {
+        "query": " AND 1  =  utl_inaddr.get_host_address   (    (   SELECT SYS.LOGIN_USER FROM DUAL   )    )    AND 'i'  =  'i",
+        "true_class": "SQLi",
+        "predicted_class": "SQLi",
+        "confidence": 1.0,
+        "correct": true
+      },
+      {
+        "query": "1\" and 6240  =    (  'qqpjq'||  (  select case 6240 when 6240 then 1 else 0 end from rdb$database  )  ||'qzvzq'  )   and \"sckh\"  =  \"sckh",
+        "true_class": "SQLi",
+        "predicted_class": "SQLi",
+        "confidence": 1.0,
+        "correct": true
+      },
+      {
+        "query": "1'   )    )    or char  (  68  )  ||char  (  69  )  ||char  (  97  )  ||char  (  85  )    =  regexp_substring  (  repeat  (  right  (  char  (  5389  )  ,0  )  ,5000000000  )  ,null  )   and    (    (   'gxgi'  =  'gxgi",
+        "true_class": "SQLi",
+        "predicted_class": "SQLi",
+        "confidence": 1.0,
+        "correct": true
+      },
+      {
+        "query": "1\" and sleep  (  5  )  #",
+        "true_class": "SQLi",
+        "predicted_class": "SQLi",
+        "confidence": 1.0,
+        "correct": true
+      },
+      {
+        "query": "-3368'   )    )    union all select 4913,4913,4913,4913,4913,4913,4913,4913,4913--",
+        "true_class": "SQLi",
+        "predicted_class": "SQLi",
+        "confidence": 1.0,
+        "correct": true
+      },
+      {
+        "query": " select * from users where id  =  '1' %!<@ union select 1,version  (    )   -- 1'",
+        "true_class": "SQLi",
+        "predicted_class": "SQLi",
+        "confidence": 1.0,
+        "correct": true
+      },
+      {
+        "query": "-4900'   )    )    or 7208  =  3236",
+        "true_class": "SQLi",
+        "predicted_class": "SQLi",
+        "confidence": 1.0,
+        "correct": true
+      }
+    ]
+  }
+}

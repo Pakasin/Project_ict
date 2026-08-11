@@ -32,12 +32,15 @@ async def lifespan(app: FastAPI):
     init_db()
 
     # --- โหลด models ---
+    # Intrusion Model: best_nslkdd_SimpleRNN (SimpleRNN, dir-format Keras export)
+    # switched from best_nslkdd_smote.keras (LSTM+SMOTE) — see CLAUDE.md for
+    # accuracy figures. best_nslkdd_smote.keras kept on disk for comparison only.
+    app.state.model_intrusion = tf.keras.models.load_model(
+        str(MODELS_DIR / "best_nslkdd_SimpleRNN")
+    )
     # Flow Model: best_GRU.keras (71 features, GRU) คือ artifact จริงที่ serve
     # ห้ามใช้ best.keras (78 features, LSTM) — ตัวนั้นมี 7 fingerprint features
     # ที่ทำให้ f1 ปลอม 0.9999 (ดู CLAUDE.md) เก็บไว้เป็นหลักฐานเปรียบเทียบเท่านั้น
-    app.state.model_intrusion = tf.keras.models.load_model(
-        str(MODELS_DIR / "best_nslkdd_smote.keras")
-    )
     app.state.model_flow = tf.keras.models.load_model(
         str(MODELS_DIR / "best_GRU.keras")
     )

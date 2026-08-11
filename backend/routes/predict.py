@@ -31,7 +31,12 @@ from backend.inference import (
 
 router = APIRouter(prefix="/api", tags=["predict"])
 
-FLOW_PRESETS_PATH = Path(__file__).parent.parent / "models" / "flow_test_presets.json"
+TEST_SAMPLES_DIR = Path(__file__).parent.parent / "models"
+TEST_SAMPLES_FILES = {
+    "flow": "flow_test_samples.json",
+    "intrusion": "intrusion_test_samples.json",
+    "sqli": "sqli_test_samples.json",
+}
 
 
 class PredictRequest(BaseModel):
@@ -182,18 +187,30 @@ async def _predict_sqli(body: PredictRequest, request: Request) -> PredictRespon
     )
 
 
-@router.get("/flow-presets")
-async def flow_presets():
-    """Real held-out test-set samples (raw features + full 10-row window) per
-    Flow Model class — verified against best_GRU.keras to predict correctly
-    when submitted as a full window. Used by the Test page instead of
-    hand-typed numbers, which don't respect the dataset's correlated feature
-    structure and default the model to BENIGN (see CLAUDE.md Known Limitations)."""
-    if not FLOW_PRESETS_PATH.exists():
-        return {"ok": False, "error": "flow_test_presets.json not found", "classes": {}}
-    with open(FLOW_PRESETS_PATH, encoding="utf-8") as f:
+@router.get("/test-samples/{model_name}")
+async def test_samples(model_name: str):
+    """Real, unfiltered held-out test-set samples per model — includes both
+    correct AND incorrect predictions in their real proportion (see
+    sample_pool_accuracy), not cherry-picked. Used by the Test page's
+    "randomize scenario" feature so users see genuine model behavior instead
+    of hand-typed numbers or guaranteed-correct demos.
+
+    predicted_class/confidence here come from the real evaluation pipeline
+    (proper windowed serving for flow/intrusion) — NOT from POST /api/predict,
+    whose single-row endpoint zero-pads and is known to bias flow/intrusion
+    results toward the majority class (see CLAUDE.md Known Limitations). The
+    Test page reveals these pre-computed values for flow/intrusion instead of
+    re-predicting, to avoid misrepresenting real model accuracy.
+    """
+    filename = TEST_SAMPLES_FILES.get(model_name)
+    if not filename:
+        raise HTTPException(status_code=404, detail=f"Unknown model: {model_name}")
+    path = TEST_SAMPLES_DIR / filename
+    if not path.exists():
+        return {"ok": False, "error": f"{filename} not found", "classes": {}}
+    with open(path, encoding="utf-8") as f:
         data = json.load(f)
-    return {"ok": True, "classes": data["classes"]}
+    return {"ok": True, **data}
 
 
 @router.get("/model-info")

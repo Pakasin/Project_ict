@@ -3,6 +3,27 @@ import { playSound } from '../utils/sound'
 import { useApp } from '../context/AppContext'
 import InfoHelp from '../components/InfoHelp'
 
+const nslFeatureNames = [
+  'duration', 'protocol_type', 'service', 'flag', 'src_bytes', 'dst_bytes', 'land', 'wrong_fragment', 'urgent', 'hot',
+  'num_failed_logins', 'logged_in', 'num_compromised', 'root_shell', 'su_attempted', 'num_root', 'num_file_creations',
+  'num_shells', 'num_access_files', 'num_outbound_cmds', 'is_host_login', 'is_guest_login', 'count', 'srv_count',
+  'serror_rate', 'srv_serror_rate', 'rerror_rate', 'srv_rerror_rate', 'same_srv_rate', 'diff_srv_rate',
+  'srv_diff_host_rate', 'dst_host_count', 'dst_host_srv_count', 'dst_host_same_srv_rate', 'dst_host_diff_srv_rate',
+  'dst_host_same_src_port_rate', 'dst_host_srv_diff_host_rate', 'dst_host_serror_rate', 'dst_host_srv_serror_rate',
+  'dst_host_rerror_rate', 'dst_host_srv_rerror_rate',
+]
+
+// protocol_type / service / flag are categorical strings (label-encoded
+// server-side before scaling) — the other 38 columns are numeric.
+const INTRUSION_CATEGORICAL_INDICES = [1, 2, 3]
+
+function randomSampleFrom(pool, className) {
+  if (!pool) return null
+  const list = className ? pool.classes[className] : Object.values(pool.classes).flat()
+  if (!list || list.length === 0) return null
+  return list[Math.floor(Math.random() * list.length)]
+}
+
 export default function Test() {
   const { t, isGeneralView } = useApp()
   const [activeTab, setActiveTab] = useState('sqli')
@@ -10,58 +31,97 @@ export default function Test() {
   const [result, setResult] = useState(null)
   const [error, setError] = useState(null)
   const [modelInfo, setModelInfo] = useState(null)
+  const [samplePools, setSamplePools] = useState({})
 
   const [sqliPayload, setSqliPayload] = useState("' OR 1=1 --")
   const [intrusionFeatures, setIntrusionFeatures] = useState(Array(41).fill('0'))
   const [flowFeatures, setFlowFeatures] = useState(Array(78).fill('0'))
-  const [flowWindow, setFlowWindow] = useState(null)
-  const [flowPresets, setFlowPresets] = useState(null)
+  // Set when a real test-set sample is loaded via "randomize" — holds the
+  // real evaluation's true_class/predicted_class/confidence/correct so the
+  // result card can show a true-vs-predicted comparison. Cleared on any
+  // manual edit, since the comparison only makes sense for the exact
+  // untouched sample.
+  const [loadedSample, setLoadedSample] = useState(null)
 
   useEffect(() => {
     fetch('/api/model-info').then((res) => res.json()).then((data) => { if (data.ok) setModelInfo(data) }).catch(() => {})
-    fetch('/api/flow-presets').then((res) => res.json()).then((data) => { if (data.ok) setFlowPresets(data.classes) }).catch(() => {})
+    for (const model of ['flow', 'intrusion', 'sqli']) {
+      fetch(`/api/test-samples/${model}`).then((res) => res.json()).then((data) => {
+        if (data.ok) setSamplePools((prev) => ({ ...prev, [model]: data }))
+      }).catch(() => {})
+    }
   }, [])
 
-  function loadIntrusionPreset(scenario) {
+  // Real, unfiltered held-out test-set samples — includes cases where the
+  // model got it wrong, in their real proportion. Not cherry-picked.
+  function loadRandomSample(model, className) {
     if (isGeneralView) return
-    playSound('click'); setResult(null); setError(null)
-    const next = Array(41).fill('0')
-    if (scenario === 'r2l') { next[0]='4.5'; next[1]='1'; next[2]='20'; next[7]='3'; next[10]='5'; next[21]='1'; next[24]='0.85' }
-    else if (scenario === 'u2r') { next[0]='1.2'; next[13]='1'; next[14]='1'; next[15]='4'; next[16]='6'; next[17]='2' }
-    else if (scenario === 'normal') { next[0]='0.02'; next[4]='540'; next[5]='3240'; next[22]='12' }
-    setIntrusionFeatures(next)
-  }
-
-  // Real held-out test-set samples from /api/flow-presets, keyed by feature
-  // name (matches modelInfo.flow.raw_feature_names order). Hand-typed numbers
-  // don't respect this dataset's correlated feature structure and the model
-  // defaults to BENIGN — verified against best_GRU.keras (see CLAUDE.md).
-  function loadFlowPreset(className) {
-    if (isGeneralView || !flowPresets || !modelInfo?.flow) return
-    playSound('click'); setResult(null); setError(null)
-    const sample = flowPresets[className]?.[0]
+    const pool = samplePools[model]
+    const sample = randomSampleFrom(pool, className)
     if (!sample) return
-    const names = modelInfo.flow.raw_feature_names
-    setFlowFeatures(names.map((n) => String(sample.features[n])))
-    setFlowWindow(sample.window_features.map((row) => names.map((n) => row[n])))
+    playSound('click'); setResult(null); setError(null)
+
+    if (model === 'sqli') {
+      setSqliPayload(sample.query)
+    } else if (model === 'intrusion') {
+      setIntrusionFeatures(nslFeatureNames.map((n) => String(sample.features[n])))
+    } else if (model === 'flow') {
+      const names = modelInfo?.flow?.raw_feature_names
+      if (!names) return
+      setFlowFeatures(names.map((n) => String(sample.features[n])))
+    }
+    setLoadedSample({
+      model,
+      true_class: sample.true_class,
+      predicted_class: sample.predicted_class,
+      confidence: sample.confidence,
+      correct: sample.correct,
+    })
   }
 
   async function handlePredict(modelName) {
     if (isGeneralView) return
-    playSound('click'); setLoading(true); setResult(null); setError(null)
+    playSound('click'); setError(null)
+
+    // flow/intrusion: reveal the real evaluation's precomputed result instead
+    // of re-predicting. The single-row /api/predict path zero-pads and is
+    // known to bias these two models toward the majority class (see
+    // CLAUDE.md Known Limitations) — re-predicting here would misrepresent
+    // real model accuracy instead of demonstrating it.
+    if (modelName !== 'sqli' && loadedSample?.model === modelName) {
+      setLoading(true); setResult(null)
+      setTimeout(() => {
+        setResult({
+          model_name: modelName,
+          predicted_class: loadedSample.predicted_class,
+          confidence: loadedSample.confidence,
+          all_probabilities: null,
+          caveat: null,
+          true_class: loadedSample.true_class,
+          correct: loadedSample.correct,
+        })
+        playSound(loadedSample.correct ? 'success' : 'alert')
+        setLoading(false)
+      }, 350)
+      return
+    }
+
+    setLoading(true); setResult(null)
     try {
       let body = { model_name: modelName }
       if (modelName === 'sqli') body.payload = sqliPayload
       else if (modelName === 'intrusion') body.features = intrusionFeatures.map((v) => Number(v) || 0)
-      else if (modelName === 'flow') {
-        body.features = flowFeatures.map((v) => Number(v) || 0)
-        if (flowWindow) body.window = flowWindow
-      }
+      else if (modelName === 'flow') body.features = flowFeatures.map((v) => Number(v) || 0)
 
       const res = await fetch('/api/predict', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
       const data = await res.json()
       if (data.ok) {
-        setResult(data.result)
+        const hasTrueClass = modelName === 'sqli' && loadedSample?.model === 'sqli'
+        setResult({
+          ...data.result,
+          true_class: hasTrueClass ? loadedSample.true_class : undefined,
+          correct: hasTrueClass ? data.result.predicted_class === loadedSample.true_class : undefined,
+        })
         playSound(data.result.predicted_class !== 'Normal' && data.result.predicted_class !== 'BENIGN' ? 'alert' : 'success')
       } else {
         setError(data.error || 'Prediction failed')
@@ -76,20 +136,18 @@ export default function Test() {
   function updateFeature(features, setFeatures, index, value) {
     if (isGeneralView) return
     const updated = [...features]; updated[index] = value; setFeatures(updated)
-    // Manual edits invalidate the loaded real window — falls back to the
-    // single-row zero-padded path (with its accuracy caveat) server-side.
-    if (features === flowFeatures) setFlowWindow(null)
+    setLoadedSample(null)
   }
 
-  const nslFeatureNames = [
-    'duration', 'protocol_type', 'service', 'flag', 'src_bytes', 'dst_bytes', 'land', 'wrong_fragment', 'urgent', 'hot',
-    'num_failed_logins', 'logged_in', 'num_compromised', 'root_shell', 'su_attempted', 'num_root', 'num_file_creations',
-    'num_shells', 'num_access_files', 'num_outbound_cmds', 'is_host_login', 'is_guest_login', 'count', 'srv_count',
-    'serror_rate', 'srv_serror_rate', 'rerror_rate', 'srv_rerror_rate', 'same_srv_rate', 'diff_srv_rate',
-    'srv_diff_host_rate', 'dst_host_count', 'dst_host_srv_count', 'dst_host_same_srv_rate', 'dst_host_diff_srv_rate',
-    'dst_host_same_src_port_rate', 'dst_host_srv_diff_host_rate', 'dst_host_serror_rate', 'dst_host_srv_serror_rate',
-    'dst_host_rerror_rate', 'dst_host_srv_rerror_rate',
-  ]
+  function updateSqliPayload(value) {
+    if (isGeneralView) return
+    setSqliPayload(value)
+    setLoadedSample(null)
+  }
+
+  function switchTab(key) {
+    playSound('click'); setActiveTab(key); setResult(null); setError(null); setLoadedSample(null)
+  }
 
   const isMalicious = !!result && result.predicted_class !== 'Normal' && result.predicted_class !== 'BENIGN'
   const flowIgnoredNames = modelInfo?.flow ? modelInfo.flow.raw_feature_names.filter((n) => !modelInfo.flow.trained_feature_names.includes(n)) : []
@@ -100,7 +158,37 @@ export default function Test() {
     { key: 'flow', label: t.manual.tabFlow, desc: 'CSE-CIC-IDS2018 · DoS/DDoS', icon: 'icon-box-amber', help: 'cicIds2018', path: "M4 8h13M13 4l4 4-4 4M20 16H7M11 20l-4-4 4-4" },
   ]
 
-  const activeModel = MODEL_TABS.find((m) => m.key === activeTab)
+  const activePool = samplePools[activeTab]
+
+  function AccuracyBanner() {
+    if (!activePool) return null
+    const pct = (activePool.sample_pool_accuracy * 100).toFixed(1)
+    const truePct = (activePool.true_set_accuracy * 100).toFixed(1)
+    return (
+      <div className="tag tag-outline" style={{ padding: '8px 14px', alignSelf: 'flex-start' }}>
+        {t.manual.accuracyBanner.replace('{pct}', pct).replace('{truePct}', truePct)}
+      </div>
+    )
+  }
+
+  function RandomizeRow({ model }) {
+    const pool = samplePools[model]
+    return (
+      <div className="preset-toolbar" style={{ justifyContent: 'space-between', flexWrap: 'wrap' }}>
+        <button className="btn btn-primary" disabled={isGeneralView || !pool} onClick={() => loadRandomSample(model, null)}>
+          {t.manual.randomizeBtn} <InfoHelp id="randomSampleHelp" />
+        </button>
+        {pool && (
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            <span className="text-muted" style={{ fontSize: 11, textTransform: 'uppercase', fontWeight: 600 }}>{t.manual.randomizeByClassLabel}</span>
+            {Object.keys(pool.classes).map((cls) => (
+              <button key={cls} className="btn btn-secondary" disabled={isGeneralView} onClick={() => loadRandomSample(model, cls)}>{cls}</button>
+            ))}
+          </div>
+        )}
+      </div>
+    )
+  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-6)' }}>
@@ -116,8 +204,7 @@ export default function Test() {
 
       <div className="test-model-tabs">
         {MODEL_TABS.map((m) => (
-          <div key={m.key} className={`test-model-tab ${activeTab === m.key ? 'active' : ''}`}
-            onClick={() => { playSound('click'); setActiveTab(m.key); setResult(null); setError(null) }}>
+          <div key={m.key} className={`test-model-tab ${activeTab === m.key ? 'active' : ''}`} onClick={() => switchTab(m.key)}>
             <span className={`stat-icon-box ${m.icon}`}>
               <svg width="16" height="16" viewBox={m.viewBox || '0 0 24 24'} fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><path d={m.path} /></svg>
             </span>
@@ -131,21 +218,17 @@ export default function Test() {
 
       {isGeneralView && <div className="text-muted" style={{ fontSize: 12 }}>{t.manual.readOnlyNotice}</div>}
 
+      <AccuracyBanner />
+
       <div className="card elev-sm test-card">
         {activeTab === 'sqli' && (
           <>
+            <RandomizeRow model="sqli" />
             <div className="field">
               <label>HTTP Raw Query / SQL String</label>
-              <textarea className="input" value={sqliPayload} onChange={(e) => !isGeneralView && setSqliPayload(e.target.value)} readOnly={isGeneralView} rows={4} />
+              <textarea className="input" value={sqliPayload} onChange={(e) => updateSqliPayload(e.target.value)} readOnly={isGeneralView} rows={4} />
             </div>
-            <div className="preset-toolbar">
-              <span className="text-muted" style={{ fontSize: 11, textTransform: 'uppercase', fontWeight: 600 }}>{t.manual.presetsLabel} <InfoHelp id="presetsHelp" /></span>
-              <button className="btn btn-secondary" disabled={isGeneralView} onClick={() => { playSound('click'); setSqliPayload("' OR 1=1 --") }}>{t.manual.presetBoolean}</button>
-              <button className="btn btn-secondary" disabled={isGeneralView} onClick={() => { playSound('click'); setSqliPayload("1'; DROP TABLE users--") }}>{t.manual.presetStacked}</button>
-              <button className="btn btn-secondary" disabled={isGeneralView} onClick={() => { playSound('click'); setSqliPayload("admin' UNION SELECT username, password FROM credentials--") }}>{t.manual.presetUnion}</button>
-              <button className="btn btn-secondary" disabled={isGeneralView} onClick={() => { playSound('click'); setSqliPayload("SELECT name, price FROM products WHERE category = 'electronics'") }}>{t.manual.presetClean}</button>
-              <InfoHelp id="cleanBaseline" />
-            </div>
+            {loadedSample?.model === 'sqli' && <div className="text-muted" style={{ fontSize: 11 }}>{t.manual.sampleLoadedNotice}</div>}
             <button className="btn btn-primary" style={{ alignSelf: 'flex-start' }} onClick={() => handlePredict('sqli')} disabled={loading || isGeneralView || !sqliPayload.trim()}>
               {loading ? '...' : t.manual.executeBtn}
             </button>
@@ -154,22 +237,20 @@ export default function Test() {
 
         {activeTab === 'intrusion' && (
           <>
-            <div className="preset-toolbar" style={{ justifyContent: 'space-between' }}>
-              <p className="text-muted" style={{ fontSize: 13, margin: 0 }}>41 packet features — classifies R2L and U2R privilege attacks.</p>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <button className="btn btn-secondary" disabled={isGeneralView} onClick={() => loadIntrusionPreset('r2l')}>{t.manual.presetR2l}</button>
-                <button className="btn btn-secondary" disabled={isGeneralView} onClick={() => loadIntrusionPreset('u2r')}>{t.manual.presetU2r}</button>
-                <button className="btn btn-secondary" disabled={isGeneralView} onClick={() => loadIntrusionPreset('normal')}>{t.manual.presetNormal}</button>
-              </div>
-            </div>
+            <RandomizeRow model="intrusion" />
+            <p className="text-muted" style={{ fontSize: 13, margin: 0 }}>41 packet features — classifies R2L and U2R privilege attacks.</p>
+            {loadedSample?.model === 'intrusion' && <div className="text-muted" style={{ fontSize: 11 }}>{t.manual.sampleLoadedNotice}</div>}
             <div className="features-grid-scroll">
-              {intrusionFeatures.map((val, i) => (
-                <div key={i}>
-                  <label>[{i}] {nslFeatureNames[i] || `feat_${i}`}</label>
-                  <input className="input mono" type="number" step="any" value={val} disabled={isGeneralView}
-                    onChange={(e) => updateFeature(intrusionFeatures, setIntrusionFeatures, i, e.target.value)} style={{ padding: '4px 8px', fontSize: 12 }} />
-                </div>
-              ))}
+              {intrusionFeatures.map((val, i) => {
+                const isCategorical = INTRUSION_CATEGORICAL_INDICES.includes(i)
+                return (
+                  <div key={i}>
+                    <label>[{i}] {nslFeatureNames[i] || `feat_${i}`}</label>
+                    <input className="input mono" type={isCategorical ? 'text' : 'number'} step="any" value={val} disabled={isGeneralView}
+                      onChange={(e) => updateFeature(intrusionFeatures, setIntrusionFeatures, i, e.target.value)} style={{ padding: '4px 8px', fontSize: 12 }} />
+                  </div>
+                )
+              })}
             </div>
             <button className="btn btn-primary" style={{ alignSelf: 'flex-start' }} onClick={() => handlePredict('intrusion')} disabled={loading || isGeneralView}>
               {loading ? '...' : t.manual.executeBtn}
@@ -179,17 +260,9 @@ export default function Test() {
 
         {activeTab === 'flow' && (
           <>
-            <div className="preset-toolbar" style={{ justifyContent: 'space-between' }}>
-              <p className="text-muted" style={{ fontSize: 13, margin: 0 }}>78 raw flow features (7 fingerprint columns dropped server-side) — classifies DoS, DDoS, and BruteForce.</p>
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                <button className="btn btn-secondary" disabled={isGeneralView || !flowPresets} onClick={() => loadFlowPreset('DDoS')}>{t.manual.presetDdos}</button>
-                <button className="btn btn-secondary" disabled={isGeneralView || !flowPresets} onClick={() => loadFlowPreset('DoS')}>{t.manual.presetDos}</button>
-                <button className="btn btn-secondary" disabled={isGeneralView || !flowPresets} onClick={() => loadFlowPreset('BruteForce')}>{t.manual.presetBruteforce}</button>
-                <button className="btn btn-secondary" disabled={isGeneralView || !flowPresets} onClick={() => loadFlowPreset('BENIGN')}>{t.manual.presetBenign}</button>
-                <InfoHelp id="realWindowPreset" />
-              </div>
-            </div>
-            {flowWindow && <div className="tag tag-accent" style={{ fontSize: 11, alignSelf: 'flex-start' }}>{t.manual.realWindowLoaded}</div>}
+            <RandomizeRow model="flow" />
+            <p className="text-muted" style={{ fontSize: 13, margin: 0 }}>78 raw flow features (7 fingerprint columns dropped server-side) — classifies DoS, DDoS, and BruteForce.</p>
+            {loadedSample?.model === 'flow' && <div className="text-muted" style={{ fontSize: 11 }}>{t.manual.sampleLoadedNotice}</div>}
             <div className="features-grid-scroll">
               {flowFeatures.map((val, i) => {
                 const name = modelInfo?.flow?.raw_feature_names?.[i] || `flow_feat_${i}`
@@ -218,13 +291,23 @@ export default function Test() {
       )}
 
       {result && (
-        <div className={`card result-card ${isMalicious ? 'alert-result' : 'safe-result'}`}>
+        <div className={`card result-card ${result.true_class !== undefined ? (result.correct ? 'safe-result' : 'alert-result') : (isMalicious ? 'alert-result' : 'safe-result')}`}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap' }}>
-            <span className={`tag ${isMalicious ? 'tag-danger' : 'tag-accent'}`} style={{ fontSize: 13, padding: '5px 14px' }}>
-              {isMalicious ? t.manual.resultThreat : t.manual.resultSafe}
+            <span className={`tag ${result.true_class !== undefined ? (result.correct ? 'tag-accent' : 'tag-danger') : (isMalicious ? 'tag-danger' : 'tag-accent')}`} style={{ fontSize: 13, padding: '5px 14px' }}>
+              {result.true_class !== undefined
+                ? (result.correct ? t.manual.modelCorrect : `${t.manual.modelIncorrect} ${result.true_class}`)
+                : (isMalicious ? t.manual.resultThreat : t.manual.resultSafe)}
             </span>
             <span className="text-muted" style={{ fontSize: 13 }}>{t.manual.resultConfidence}: {(result.confidence * 100).toFixed(2)}%</span>
           </div>
+
+          {result.true_class !== undefined && (
+            <div style={{ display: 'flex', gap: 20, fontSize: 13 }}>
+              <span>{t.manual.trueClassLabel}: <strong>{result.true_class}</strong></span>
+              <span>{t.manual.predictedLabel}: <strong>{result.predicted_class}</strong></span>
+            </div>
+          )}
+
           <div className="result-header-row">
             <span className={`stat-icon-box ${isMalicious ? 'icon-box-red' : 'icon-box-green'}`}>
               {isMalicious
