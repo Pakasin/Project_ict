@@ -1,0 +1,13 @@
+{
+  "model_file": "best_sqli.keras",
+  "max_len": 221,
+  "vocab_size": 106,
+  "char_level": true,
+  "classes": [
+    "Normal",
+    "SQLi"
+  ],
+  "threshold_default": 0.75,
+  "text_column_in_source": "Query",
+  "label_column_in_source": "Label"
+}
