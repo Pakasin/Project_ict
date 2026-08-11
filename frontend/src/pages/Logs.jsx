@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import ThreatInspectModal from '../components/ThreatInspectModal'
 import InfoHelp from '../components/InfoHelp'
 import { playSound } from '../utils/sound'
@@ -6,6 +7,7 @@ import { useApp } from '../context/AppContext'
 
 export default function Logs() {
   const { t } = useApp()
+  const navigate = useNavigate()
   const [logs, setLogs] = useState([])
   const [loading, setLoading] = useState(true)
   const [page, setPage] = useState(0)
@@ -102,6 +104,19 @@ export default function Logs() {
     try { return new Date(timestamp).toLocaleString('th-TH', { hour12: false }) } catch { return timestamp }
   }
 
+  function clearLogFilters() {
+    playSound('click')
+    setSearchQuery('')
+    setFilters({ model_name: '', attack_class: '', alerts_only: false })
+    setPage(0)
+  }
+
+  function severityClass(confidence) {
+    if (confidence >= 0.85) return 'tag-danger'
+    if (confidence >= 0.6) return 'tag-warning'
+    return 'tag-neutral'
+  }
+
   const sortIndicator = (field) => sortField !== field ? '' : (sortDir === 'asc' ? ' ↑' : ' ↓')
   const displayLogs = getFilteredAndSortedLogs()
 
@@ -119,39 +134,39 @@ export default function Logs() {
         </div>
       </div>
 
-      <div className="logs-filters-bar">
-        <input className="input" style={{ flex: '1 1 220px' }} placeholder={t.logs.searchPh} value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
-        <select className="input" style={{ width: 200 }} value={filters.model_name} onChange={(e) => { playSound('click'); setFilters({ ...filters, model_name: e.target.value }); setPage(0) }}>
+      <div className="logs-filters-grid">
+        <input className="input" placeholder={t.logs.searchPh} value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
+        <select className="input" value={filters.model_name} onChange={(e) => { playSound('click'); setFilters({ ...filters, model_name: e.target.value }); setPage(0) }}>
           <option value="">{t.logs.modelFilterAll}</option>
-          <option value="intrusion">Intrusion (UNSW-NB15)</option>
-          <option value="flow">Flow (CIC-IDS2018)</option>
+          <option value="intrusion">Intrusion (NSL-KDD)</option>
+          <option value="flow">Flow (CSE-CIC-IDS2018)</option>
           <option value="sqli">Injection (SQLi)</option>
         </select>
-        <select className="input" style={{ width: 200 }} value={filters.attack_class} onChange={(e) => { playSound('click'); setFilters({ ...filters, attack_class: e.target.value }); setPage(0) }}>
+        <select className="input" value={filters.attack_class} onChange={(e) => { playSound('click'); setFilters({ ...filters, attack_class: e.target.value }); setPage(0) }}>
           <option value="">{t.logs.classFilterAll}</option>
           <option value="Normal">Normal / BENIGN</option>
           <option value="R2L">R2L</option>
           <option value="U2R">U2R</option>
           <option value="DDoS">DDoS</option>
           <option value="DoS">DoS</option>
-          <option value="PortScan">PortScan</option>
           <option value="BruteForce">BruteForce</option>
           <option value="SQL Injection">SQL Injection</option>
         </select>
-        <label className="seg-opt" style={{ border: '1px solid var(--color-divider)' }}>
-          <input type="checkbox" checked={filters.alerts_only} onChange={(e) => { playSound('click'); setFilters({ ...filters, alerts_only: e.target.checked }); setPage(0) }} style={{ position: 'static', width: 'auto', height: 'auto', opacity: 1, pointerEvents: 'auto', marginRight: 6 }} />
-          {t.logs.alertsOnlyLabel}
-        </label>
       </div>
 
-      <div className="card elev-sm" style={{ padding: 'var(--space-4)' }}>
+      <div className="card elev-sm" style={{ padding: 0, overflow: 'hidden' }}>
         {loading ? (
           <div className="loading-spinner"><div className="spinner"></div></div>
         ) : displayLogs.length === 0 ? (
-          <div className="empty-state">
+          <div className="empty-state" style={{ padding: 'var(--space-8) 0' }}>
             <svg className="empty-icon" width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="5" y="3" width="14" height="18"></rect><line x1="8" y1="8" x2="16" y2="8"></line><line x1="8" y1="12" x2="16" y2="12"></line></svg>
             <div style={{ fontSize: 14 }}>{t.logs.emptyTitle}</div>
             <div className="text-muted" style={{ fontSize: 12 }}>{t.logs.emptySub}</div>
+            <div style={{ display: 'flex', gap: 10, marginTop: 18, flexWrap: 'wrap', justifyContent: 'center' }}>
+              <button className="btn btn-secondary" onClick={clearLogFilters}>{t.logs.clearFilters}</button>
+              <button className="btn btn-secondary" onClick={() => { playSound('click'); fetchLogs() }}>{t.logs.refresh}</button>
+              <button className="btn btn-primary" onClick={() => { playSound('click'); navigate('/test') }}>{t.logs.goToManualTest}</button>
+            </div>
           </div>
         ) : (
           <>
@@ -159,24 +174,24 @@ export default function Logs() {
               <table className="table">
                 <thead>
                   <tr>
-                    <th data-sortable onClick={() => handleSort('id')}>{t.logs.colRef} <InfoHelp id="refId" />{sortIndicator('id')}</th>
-                    <th data-sortable onClick={() => handleSort('model_name')}>{t.logs.colModel}{sortIndicator('model_name')}</th>
-                    <th data-sortable onClick={() => handleSort('attack_class')}>{t.logs.colAttack}{sortIndicator('attack_class')}</th>
-                    <th data-sortable onClick={() => handleSort('confidence')}>{t.logs.colConfidence}{sortIndicator('confidence')}</th>
-                    <th data-sortable onClick={() => handleSort('source_ip')}>{t.logs.colSource} <InfoHelp id="sourceIp" />{sortIndicator('source_ip')}</th>
                     <th data-sortable onClick={() => handleSort('timestamp')}>{t.logs.colTimestamp}{sortIndicator('timestamp')}</th>
-                    <th style={{ textAlign: 'center' }}>{t.logs.colAlert}</th>
+                    <th data-sortable onClick={() => handleSort('id')}>{t.logs.colRef} <InfoHelp id="refId" />{sortIndicator('id')}</th>
+                    <th data-sortable onClick={() => handleSort('source_ip')}>{t.logs.colSource} <InfoHelp id="sourceIp" />{sortIndicator('source_ip')}</th>
+                    <th data-sortable onClick={() => handleSort('attack_class')}>{t.logs.colAttack}{sortIndicator('attack_class')}</th>
+                    <th data-sortable onClick={() => handleSort('model_name')}>{t.logs.colModel}{sortIndicator('model_name')}</th>
+                    <th data-sortable onClick={() => handleSort('confidence')}>{t.logs.colSeverity}{sortIndicator('confidence')}</th>
+                    <th style={{ textAlign: 'center' }}>{t.logs.colStatus}</th>
                   </tr>
                 </thead>
                 <tbody>
                   {displayLogs.map((log) => (
                     <tr key={log.id} className={log.is_alert ? 'alert-row' : ''} style={{ cursor: 'pointer' }} onClick={() => { playSound('click'); setSelectedEvent(log) }}>
-                      <td className="mono">#{log.id}</td>
-                      <td><span className={`event-model-badge ${log.model_name}`}>{log.model_name}</span></td>
-                      <td style={{ fontWeight: 600 }}>{log.attack_class}</td>
-                      <td className={`${getConfidenceClass(log.confidence)} mono`}>{(log.confidence * 100).toFixed(1)}%</td>
-                      <td className="mono">{log.source_ip}</td>
                       <td className="mono" style={{ fontSize: 12 }}>{formatTime(log.timestamp)}</td>
+                      <td className="mono">#{log.id}</td>
+                      <td className="mono">{log.source_ip}</td>
+                      <td style={{ fontWeight: 600 }}>{log.attack_class}</td>
+                      <td><span className={`event-model-badge ${log.model_name}`}>{log.model_name}</span></td>
+                      <td><span className={`tag ${severityClass(log.confidence)} mono`}>{(log.confidence * 100).toFixed(1)}%</span></td>
                       <td style={{ textAlign: 'center' }}>
                         {log.is_alert ? <span className="tag tag-danger">!</span> : <span className="tag tag-accent">OK</span>}
                       </td>

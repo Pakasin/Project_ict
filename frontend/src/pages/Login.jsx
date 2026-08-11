@@ -152,17 +152,59 @@ export default function Login({ onLoginSuccess }) {
     }, 500)
   }
 
+  const FEATURES = [
+    { icon: "M10 1L18 4V11C18 17 14 21 10 23C6 21 2 17 2 11V4L10 1Z", viewBox: '0 0 20 24', title: t.login.featIntrusionTitle, desc: t.login.featIntrusionDesc },
+    { icon: "M4 8h13M13 4l4 4-4 4M20 16H7M11 20l-4-4 4-4", viewBox: '0 0 24 24', title: t.login.featFlowTitle, desc: t.login.featFlowDesc },
+    { icon: "M8.5 1.3L15.5 13H1.5L8.5 1.3ZM8.5 5.5v3.5M8.5 11v.01", viewBox: '0 0 16 16', title: t.login.featAlertTitle, desc: t.login.featAlertDesc },
+  ]
+
   return (
     <div className="login-shell">
+      <div className="login-side-panel">
+        <div className="login-side-content">
+          <div className="login-brand-row">
+            <span className="shield-icon" style={{ width: 44, height: 44, borderRadius: 12 }}>
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--color-accent)" strokeWidth="1.5"><path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6l7-3z"></path></svg>
+            </span>
+            <h1 style={{ fontSize: 22, margin: 0, color: '#F1F4FA' }}>{t.brand}</h1>
+          </div>
+          <div className="login-side-tagline">{t.tagline}</div>
+        </div>
+
+        <div className="login-feature-list">
+          {FEATURES.map((f, i) => (
+            <div className="login-feature-item" key={i}>
+              <span className="login-feature-icon">
+                <svg width="16" height="16" viewBox={f.viewBox} fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><path d={f.icon} /></svg>
+              </span>
+              <div className="login-feature-text">
+                <div className="ft-title">{f.title}</div>
+                <div className="ft-desc">{f.desc}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="login-side-footer">
+          <span className="status-dot dot-online"></span>{t.login.sideFooter}
+        </div>
+      </div>
+
+      <div className="login-form-panel">
       <div className={`card elev-md login-card ${shake ? 'shake' : ''}`}>
         <div className="login-brand">
-          <div className="login-brand-row">
+          <div className="login-brand-row" style={{ display: 'none' }}>
             <span className="shield-icon" style={{ width: 52, height: 52, borderRadius: 14 }}>
               <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--color-accent)" strokeWidth="1.5"><path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6l7-3z"></path></svg>
             </span>
-            <h1 style={{ fontSize: 22, margin: 0 }}>{t.brand}</h1>
           </div>
-          <div className="login-tagline">{t.tagline}</div>
+          <h1 style={{ fontSize: 21, margin: 0 }}>{authMode === 'signin' ? t.login.welcomeBack : t.login.tabSignup}</h1>
+          <div className="login-tagline">{authMode === 'signin' ? t.login.signinSubtitle : t.login.signupSubtitle}</div>
+        </div>
+
+        <div className="auth-tabs">
+          <button type="button" className={authMode === 'signin' ? 'active' : ''} onClick={() => handleTabSwitch('signin')}>{t.login.tabSignin}</button>
+          <button type="button" className={authMode === 'signup' ? 'active' : ''} onClick={() => handleTabSwitch('signup')}>{t.login.tabSignup}</button>
         </div>
 
         {error && <div className="card login-notice" style={{ borderColor: 'var(--color-danger)', color: 'var(--color-danger)', fontSize: 13 }}>{error}</div>}
@@ -187,15 +229,11 @@ export default function Login({ onLoginSuccess }) {
             <button type="submit" className="btn btn-primary btn-block" disabled={loading}>
               {loading ? '...' : t.login.submitSignin}
             </button>
-            <div style={{ textAlign: 'center', fontSize: 13 }}>
-              {t.login.noAccountText} <a href="#" onClick={(e) => { e.preventDefault(); handleTabSwitch('signup') }}>{t.login.tabSignup}</a>
-            </div>
           </form>
         )}
 
         {authMode === 'signup' && (
           <form onSubmit={handleRegisterSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
-            <h2 style={{ fontSize: 20, margin: 0, textAlign: 'center' }}>{t.login.tabSignup}</h2>
             <div className="auth-grid">
               <div className="field"><label>{t.login.firstName}</label><input className="input" placeholder={t.login.firstNamePh} value={regName} onChange={(e) => setRegName(e.target.value)} disabled={loading} autoFocus /></div>
               <div className="field"><label>{t.login.lastName}</label><input className="input" placeholder={t.login.lastNamePh} value={regLastname} onChange={(e) => setRegLastname(e.target.value)} disabled={loading} /></div>
@@ -226,9 +264,6 @@ export default function Login({ onLoginSuccess }) {
             <button type="submit" className="btn btn-primary btn-block" disabled={loading || !consentChecked}>
               {loading ? '...' : t.login.submitSignup}
             </button>
-            <div style={{ textAlign: 'center', fontSize: 13 }}>
-              {t.login.haveAccountText} <a href="#" onClick={(e) => { e.preventDefault(); handleTabSwitch('signin') }}>{t.login.tabSignin}</a>
-            </div>
           </form>
         )}
 
@@ -236,6 +271,7 @@ export default function Login({ onLoginSuccess }) {
           <span className="tag tag-outline">{t.login.secureBadge}</span>
           <p style={{ fontSize: 12, margin: 0 }} className="text-muted">{t.login.footerNote}</p>
         </div>
+      </div>
       </div>
     </div>
   )

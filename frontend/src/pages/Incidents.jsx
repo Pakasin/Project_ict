@@ -112,51 +112,36 @@ export default function Incidents() {
               <div className="text-muted" style={{ fontSize: 12 }}>{t.incidents.emptySub}</div>
             </div>
           ) : (
-            <div style={{ overflowX: 'auto' }}>
-              <table className="table">
-                <thead>
-                  <tr>
-                    <th>{t.incidents.colRef}</th><th>{t.incidents.colAttack}</th><th>{t.incidents.colModel}</th>
-                    <th>{t.incidents.colConfidence}</th><th>{t.incidents.colSource}</th><th>{t.incidents.colTimestamp}</th>
-                    <th>{t.incidents.colStatus}</th><th style={{ textAlign: 'right' }}>{t.incidents.colActions}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredIncidents.map((item) => {
-                    const st = getStatus(item);
-                    return (
-                      <tr key={item.id} className={st === 'OPEN' ? 'alert-row' : ''} style={{ cursor: 'pointer' }} onClick={() => { playSound('click'); setSelectedEvent(item); }}>
-                        <td className="mono">#{item.id}</td>
-                        <td style={{ fontWeight: 600 }}>{item.attack_class}</td>
-                        <td><span className={`event-model-badge ${item.model_name}`}>{item.model_name}</span></td>
-                        <td className="mono confidence-high">{(item.confidence * 100).toFixed(1)}%</td>
-                        <td className="mono">{item.source_ip}</td>
-                        <td className="mono" style={{ fontSize: 12 }}>{formatTime(item.timestamp)}</td>
-                        <td><span className={`tag ${statusTag(st)}`}>{statusLabel(st)}</span></td>
-                        <td style={{ textAlign: 'right' }} onClick={(e) => e.stopPropagation()}>
-                          <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
-                            {st !== 'INVESTIGATING' && st !== 'MITIGATED' && (
-                              <button className="btn btn-ghost" style={{ padding: '4px 8px', fontSize: 11 }} disabled={isGeneralView}
-                                onClick={() => updateIncidentStatus(item.id, item.source_ip, 'INVESTIGATING', `Started investigation on IP ${item.source_ip}`)}>
-                                {t.incidents.actionTriage}
-                              </button>
-                            )}
-                            {st !== 'MITIGATED' && (
-                              <button className="btn btn-danger" style={{ padding: '4px 8px', fontSize: 11 }} disabled={isGeneralView}
-                                onClick={() => updateIncidentStatus(item.id, item.source_ip, 'MITIGATED', `Quarantined & blocked IP ${item.source_ip}`)}>
-                                {t.incidents.actionQuarantine}
-                              </button>
-                            )}
-                            {st === 'MITIGATED' && (
-                              <button className="btn btn-ghost" style={{ padding: '4px 8px', fontSize: 11 }} onClick={() => setSelectedEvent(item)}>{t.incidents.actionInspect}</button>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+            <div className="incident-row-list">
+              {filteredIncidents.map((item) => {
+                const st = getStatus(item);
+                const severityColor = item.confidence >= 0.92 ? 'var(--color-danger)' : item.confidence >= 0.82 ? 'var(--color-warning)' : 'var(--color-accent)';
+                return (
+                  <div key={item.id} className="incident-row" onClick={() => { playSound('click'); setSelectedEvent(item); }}>
+                    <div className="incident-row-strip" style={{ background: severityColor }} />
+                    <div><div className="mono" style={{ fontSize: 12.5, fontWeight: 700 }}>#{item.id}</div><div className="text-muted" style={{ fontSize: 11, marginTop: 2 }}>{formatTime(item.timestamp)}</div></div>
+                    <div><div style={{ fontSize: 12.5, fontWeight: 600 }}>{item.attack_class}</div><div className="text-muted" style={{ fontSize: 11, marginTop: 2 }}>{item.model_name}</div></div>
+                    <div><div className="mono" style={{ fontSize: 12 }}>{item.source_ip}</div><div className="text-muted" style={{ fontSize: 11, marginTop: 2 }}>{(item.confidence * 100).toFixed(1)}% {t.incidents.colConfidence}</div></div>
+                    <span className="tag tag-danger" style={{ justifySelf: 'start' }}>{(item.confidence * 100).toFixed(0)}%</span>
+                    <span className={`tag ${statusTag(st)}`}>{statusLabel(st)}</span>
+                    <div style={{ display: 'flex', gap: 6, alignItems: 'center' }} onClick={(e) => e.stopPropagation()}>
+                      {st !== 'INVESTIGATING' && st !== 'MITIGATED' && (
+                        <button className="btn btn-ghost" style={{ padding: '4px 8px', fontSize: 11 }} disabled={isGeneralView}
+                          onClick={() => updateIncidentStatus(item.id, item.source_ip, 'INVESTIGATING', `Started investigation on IP ${item.source_ip}`)}>
+                          {t.incidents.actionTriage}
+                        </button>
+                      )}
+                      {st !== 'MITIGATED' && (
+                        <button className="btn btn-danger" style={{ padding: '4px 8px', fontSize: 11 }} disabled={isGeneralView}
+                          onClick={() => updateIncidentStatus(item.id, item.source_ip, 'MITIGATED', `Quarantined & blocked IP ${item.source_ip}`)}>
+                          {t.incidents.actionQuarantine}
+                        </button>
+                      )}
+                      <span className="incident-view-link" onClick={() => setSelectedEvent(item)}>{t.incidents.actionInspect}</span>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>

@@ -76,17 +76,39 @@ export default function Test() {
 
   const isMalicious = result && result.predicted_class !== 'Normal' && result.predicted_class !== 'BENIGN'
 
+  const MODEL_TABS = [
+    { key: 'sqli', label: t.manual.tabSql, desc: 'SQLi · Embedding LSTM', icon: 'icon-box-green', help: 'sqliModelHelp', path: "M12 3 4.5 12c0 5 3.5 8.5 7.5 9 4-1.5 7.5-4.5 7.5-9L19.5 3zm-4 9 3 3 5-5" },
+    { key: 'intrusion', label: t.manual.tabIntrusion, desc: 'NSL-KDD · R2L/U2R', icon: 'icon-box-red', help: 'unswNb15', path: "M10 1L18 4V11C18 17 14 21 10 23C6 21 2 17 2 11V4L10 1Z", viewBox: '0 0 20 24' },
+    { key: 'flow', label: t.manual.tabFlow, desc: 'CSE-CIC-IDS2018 · DoS/DDoS', icon: 'icon-box-amber', help: 'cicIds2018', path: "M4 8h13M13 4l4 4-4 4M20 16H7M11 20l-4-4 4-4" },
+  ]
+
+  const activeModel = MODEL_TABS.find((m) => m.key === activeTab)
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-6)' }}>
-      <div className="page-header">
-        <h2>{t.manual.title}</h2>
-        <p className="text-muted">{t.manual.subtitle}</p>
+      <div className="page-header" style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+        <div className="dash-header-icon">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--color-accent)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 4h18v16H3V4zM7 9l3 3-3 3M12 15h4" /></svg>
+        </div>
+        <div>
+          <h2 style={{ margin: '0 0 4px' }}>{t.manual.title}</h2>
+          <p className="text-muted" style={{ margin: 0 }}>{t.manual.subtitle}</p>
+        </div>
       </div>
 
-      <div className="seg">
-        <label className="seg-opt" style={{ flex: 1, justifyContent: 'center' }}><input type="radio" name="model" checked={activeTab === 'sqli'} onChange={() => { setActiveTab('sqli'); setResult(null); setError(null) }} />{t.manual.tabSql} <InfoHelp id="sqliModelHelp" /></label>
-        <label className="seg-opt" style={{ flex: 1, justifyContent: 'center' }}><input type="radio" name="model" checked={activeTab === 'intrusion'} onChange={() => { setActiveTab('intrusion'); setResult(null); setError(null) }} />{t.manual.tabIntrusion} <InfoHelp id="unswNb15" /></label>
-        <label className="seg-opt" style={{ flex: 1, justifyContent: 'center' }}><input type="radio" name="model" checked={activeTab === 'flow'} onChange={() => { setActiveTab('flow'); setResult(null); setError(null) }} />{t.manual.tabFlow} <InfoHelp id="cicIds2018" /></label>
+      <div className="test-model-tabs">
+        {MODEL_TABS.map((m) => (
+          <div key={m.key} className={`test-model-tab ${activeTab === m.key ? 'active' : ''}`}
+            onClick={() => { playSound('click'); setActiveTab(m.key); setResult(null); setError(null) }}>
+            <span className={`stat-icon-box ${m.icon}`}>
+              <svg width="16" height="16" viewBox={m.viewBox || '0 0 24 24'} fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><path d={m.path} /></svg>
+            </span>
+            <div style={{ minWidth: 0 }}>
+              <div className="tab-title">{m.label} <InfoHelp id={m.help} /></div>
+              <div className="tab-desc">{m.desc}</div>
+            </div>
+          </div>
+        ))}
       </div>
 
       {isGeneralView && <div className="text-muted" style={{ fontSize: 12 }}>{t.manual.readOnlyNotice}</div>}
@@ -98,8 +120,8 @@ export default function Test() {
               <label>HTTP Raw Query / SQL String</label>
               <textarea className="input" value={sqliPayload} onChange={(e) => !isGeneralView && setSqliPayload(e.target.value)} readOnly={isGeneralView} rows={4} />
             </div>
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-              <span className="text-muted" style={{ fontSize: 11, textTransform: 'uppercase' }}>{t.manual.presetsLabel} <InfoHelp id="presetsHelp" /></span>
+            <div className="preset-toolbar">
+              <span className="text-muted" style={{ fontSize: 11, textTransform: 'uppercase', fontWeight: 600 }}>{t.manual.presetsLabel} <InfoHelp id="presetsHelp" /></span>
               <button className="btn btn-secondary" disabled={isGeneralView} onClick={() => { playSound('click'); setSqliPayload("' OR 1=1 --") }}>{t.manual.presetBoolean}</button>
               <button className="btn btn-secondary" disabled={isGeneralView} onClick={() => { playSound('click'); setSqliPayload("1'; DROP TABLE users--") }}>{t.manual.presetStacked}</button>
               <button className="btn btn-secondary" disabled={isGeneralView} onClick={() => { playSound('click'); setSqliPayload("admin' UNION SELECT username, password FROM credentials--") }}>{t.manual.presetUnion}</button>
@@ -114,7 +136,7 @@ export default function Test() {
 
         {activeTab === 'intrusion' && (
           <>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
+            <div className="preset-toolbar" style={{ justifyContent: 'space-between' }}>
               <p className="text-muted" style={{ fontSize: 13, margin: 0 }}>41 packet features — classifies R2L and U2R privilege attacks.</p>
               <div style={{ display: 'flex', gap: 8 }}>
                 <button className="btn btn-secondary" disabled={isGeneralView} onClick={() => loadIntrusionPreset('r2l')}>{t.manual.presetR2l}</button>
@@ -139,8 +161,8 @@ export default function Test() {
 
         {activeTab === 'flow' && (
           <>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
-              <p className="text-muted" style={{ fontSize: 13, margin: 0 }}>78 volumetric flow features — classifies DDoS, Slowloris DoS, PortScan.</p>
+            <div className="preset-toolbar" style={{ justifyContent: 'space-between' }}>
+              <p className="text-muted" style={{ fontSize: 13, margin: 0 }}>78 volumetric flow features — classifies DoS, DDoS, and BruteForce.</p>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                 <button className="btn btn-secondary" disabled={isGeneralView} onClick={() => loadFlowPreset('ddos')}>{t.manual.presetDdos}</button>
                 <button className="btn btn-secondary" disabled={isGeneralView} onClick={() => loadFlowPreset('dos')}>{t.manual.presetDos}</button>
@@ -179,7 +201,14 @@ export default function Test() {
             </span>
             <span className="text-muted" style={{ fontSize: 13 }}>{t.manual.resultConfidence}: {(result.confidence * 100).toFixed(2)}%</span>
           </div>
-          <div style={{ fontFamily: 'var(--font-heading)', fontSize: 28 }}>{result.predicted_class}</div>
+          <div className="result-header-row">
+            <span className={`stat-icon-box ${isMalicious ? 'icon-box-red' : 'icon-box-green'}`}>
+              {isMalicious
+                ? <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="m10.3 3.9 8.7 15A1.8 1.8 0 0 1 17.5 21h-15a1.8 1.8 0 0 1-1.6-2.7L9 3.9a1.8 1.8 0 0 1 3 0ZM12 9v4M12 16.5v.01" /></svg>
+                : <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg>}
+            </span>
+            <div style={{ fontFamily: 'var(--font-heading)', fontSize: 28 }}>{result.predicted_class}</div>
+          </div>
 
           {result.all_probabilities && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>

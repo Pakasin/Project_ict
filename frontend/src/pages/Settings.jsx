@@ -99,19 +99,24 @@ export default function Settings() {
   }
 
   const categories = [
-    { key: 'profile', label: t.settings.catProfile },
-    { key: 'general', label: t.settings.catGeneral },
-    { key: 'audio', label: t.settings.catAudio },
-    { key: 'display', label: t.settings.catDisplay },
-    ...(isAdminActual ? [{ key: 'role', label: t.settings.catRole }] : []),
-    ...(isGeneralView ? [] : [{ key: 'firewall', label: t.settings.catFirewall }]),
+    { key: 'profile', label: t.settings.catProfile, icon: "M12 12c2.5 0 4.5-2 4.5-4.5S14.5 3 12 3 7.5 5 7.5 7.5 9.5 12 12 12Zm0 2c-4 0-7.5 2-7.5 5v1h15v-1c0-3-3.5-5-7.5-5Z" },
+    { key: 'general', label: t.settings.catGeneral, icon: "M12 12m-3 0a3 3 0 1 0 6 0a3 3 0 1 0 -6 0M12 3v3M12 18v3M3 12h3M18 12h3M5.5 5.5l2 2M16.5 16.5l2 2M5.5 18.5l2-2M16.5 7.5l2-2" },
+    { key: 'audio', label: t.settings.catAudio, icon: "M4 9v6h4l5 5V4L8 9H4Zm12.5 3a4.5 4.5 0 0 0-2.5-4v8a4.5 4.5 0 0 0 2.5-4Z" },
+    { key: 'display', label: t.settings.catDisplay, icon: "M3 4h18v12H3zM8 20h8M12 16v4" },
+    ...(isAdminActual ? [{ key: 'role', label: t.settings.catRole, icon: "M12 8a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM6 21v-2a6 6 0 0 1 12 0v2" }] : []),
+    ...(isGeneralView ? [] : [{ key: 'firewall', label: t.settings.catFirewall, icon: "M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6l7-3z" }]),
   ];
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-6)' }}>
-      <div className="page-header">
-        <h2>{t.settings.title}</h2>
-        <p className="text-muted">{t.settings.subtitle}</p>
+      <div className="page-header" style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+        <div className="dash-header-icon">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--color-accent)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 12m-3 0a3 3 0 1 0 6 0a3 3 0 1 0 -6 0M12 3v3M12 18v3M3 12h3M18 12h3M5.5 5.5l2 2M16.5 16.5l2 2M5.5 18.5l2-2M16.5 7.5l2-2" /></svg>
+        </div>
+        <div>
+          <h2 style={{ margin: '0 0 4px' }}>{t.settings.title}</h2>
+          <p className="text-muted" style={{ margin: 0 }}>{t.settings.subtitle}</p>
+        </div>
       </div>
 
       <div className="settings-layout">
@@ -119,6 +124,7 @@ export default function Settings() {
           {categories.map((c) => (
             <a key={c.key} href="#" aria-current={category === c.key ? 'page' : undefined}
               onClick={(e) => { e.preventDefault(); playSound('click'); setCategory(c.key); }}>
+              <span className="nav-icon"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d={c.icon} /></svg></span>
               {c.label}
             </a>
           ))}
@@ -254,15 +260,22 @@ export default function Settings() {
                   <InfoHelp id="simulateBlockHelp" />
                 </span>
               </div>
-              <div className="quarantine-list">
+              <div>
                 {blockedIps.length === 0 ? (
                   <div className="text-muted" style={{ fontSize: 13 }}>{t.settings.firewallEmpty}</div>
                 ) : (
                   blockedIps.map((ip) => (
-                    <div key={ip} className="tag tag-outline quarantine-tag">
-                      <span className="mono">{ip}</span>
-                      <button className="btn btn-ghost" style={{ padding: 0, fontSize: 11 }} onClick={() => unblockIp(ip)} disabled={isGeneralView}>{t.settings.unblockBtn}</button>
-                      <InfoHelp id="unblockHelp" />
+                    <div key={ip} className="blocked-ip-row">
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <span className="stat-icon-box icon-box-red" style={{ width: 30, height: 30 }}>
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6l7-3z" /><path d="M9.5 9.5l5 5M14.5 9.5l-5 5" /></svg>
+                        </span>
+                        <span className="mono" style={{ fontSize: 13 }}>{ip}</span>
+                      </div>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                        <button className="btn btn-ghost" style={{ fontSize: 12 }} onClick={() => unblockIp(ip)} disabled={isGeneralView}>{t.settings.unblockBtn}</button>
+                        <InfoHelp id="unblockHelp" />
+                      </span>
                     </div>
                   ))
                 )}

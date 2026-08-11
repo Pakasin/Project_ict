@@ -107,12 +107,7 @@ function AppShell({ auth, onLogout }) {
     ws.onclose = () => { setTimeout(connectGlobalWebSocket, 4000) }
   }
 
-  const defconDesc = defcon === 5 ? t.dash.radarStatus.split(': ')[1] || t.defconSub
-    : defcon === 4 ? t.defconSub
-    : defcon === 3 ? t.incidents.statOpen
-    : t.incidents.statOpen
-
-  const roleColor = isAdminActual ? 'var(--color-danger)' : 'var(--color-accent)'
+  const roleColor = 'var(--color-neutral-600)'
 
   return (
     <div className="app-layout">
@@ -129,11 +124,7 @@ function AppShell({ auth, onLogout }) {
             <span className="defcon-pulse-dot"></span>
             <div className="defcon-text">
               <span className="defcon-level mono">DEFCON {defcon} <InfoHelp id="defcon" /></span>
-              <span className="defcon-desc">
-                {defcon === 5 ? t.defconSub :
-                 defcon === 4 ? t.defconSub :
-                 defcon === 3 ? t.incidents.statOpen : t.incidents.statOpen}
-              </span>
+              <span className="defcon-desc">{defcon >= 4 ? t.defconSub : t.incidents.statOpen}</span>
             </div>
             {activeAlertsCount > 0 && <span className="defcon-badge mono">{activeAlertsCount}</span>}
           </div>
@@ -208,10 +199,6 @@ function AppShell({ auth, onLogout }) {
             </div>
           </div>
           <button className="btn btn-secondary logout-btn" onClick={onLogout}>{t.logout}</button>
-          <div className="sidebar-status">
-            <span className="status-dot dot-online"></span>
-            AI Neural Engine Online
-          </div>
         </div>
       </aside>
 
