@@ -1,53 +1,94 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// pages/Settings.jsx — หน้าตั้งค่าระบบ (System Settings)
+//
+// Tab ที่มี:
+//   - profile:   สามารถแก้ไขชื่อ, อีเมล, เบอร์โทร, เปลี่ยนรหัสผ่าน
+//   - display:   ธีมสี (dark/light), ภาษา (th/en), compact mode, refresh interval
+//   - audio:     เปิด/ปิดเสียง, ปรับระดับเสียง
+//   - firewall:  จัดการ IP ที่ถูกบล็อค/quarantine (Admin เท่านั้น)
+//   - connection: ทดสอบสถานะ WebSocket และ Admin preview mode
+// ─────────────────────────────────────────────────────────────────────────────
+
 import React, { useState, useEffect } from 'react';
 import { isSoundEnabled, setSoundEnabled as saveSoundEnabled, getVolume, setVolume as saveVolume, playSound } from '../utils/sound';
 import { useApp } from '../context/AppContext';
 import InfoHelp from '../components/InfoHelp';
+import { CONN_STATUS } from '../hooks/useConnectionStatus';
+import { relativeTimeTh } from '../utils/time';
+
+const INPUT_STYLE = {
+  width: '100%', padding: '10px 14px', borderRadius: 9, border: '1px solid var(--border-soft)',
+  background: 'var(--row-head-bg)', color: 'var(--text)', fontSize: 13.5, outline: 'none',
+  boxSizing: 'border-box', transition: 'border-color .15s',
+};
+
+const SECTION_TITLE = { fontSize: 15, fontWeight: 700, margin: '0 0 4px', color: 'var(--text)' };
+const SECTION_SUB = { fontSize: 12.5, color: 'var(--text-tertiary)', margin: '0 0 20px' };
 
 export default function Settings() {
-  const { t, lang, setLang, theme, setTheme, auth, updateProfile, previewAsGeneral, setPreviewAsGeneral, isAdminActual, isGeneralView, setAccessDeniedOpen } = useApp();
+  const { t, lang, setLang, theme, setTheme, auth, updateProfile, previewAsGeneral, setPreviewAsGeneral, isAdminActual, isGeneralView, setAccessDeniedOpen, conn } = useApp();
+
+  // category: tab/หมวดหมู่ที่กำลังแสดงอยู่ — เริ่มที่ 'profile'
   const [category, setCategory] = useState('profile');
 
-  // The firewall tab is admin-only (edge containment tooling). If an admin
-  // flips into general-user preview while sitting on it, bounce them out
-  // and surface the same access-denied modal the route guard uses.
+  // ป้องกัน General User เข้าถึง tab firewall (ผ่าน URL หรือ admin preview mode)
+  // เมื่อ isGeneralView เปลี่ยน หรือ category เปลี่ยนไปที่ firewall ให้ redirect กลับ
   useEffect(() => {
     if (isGeneralView && category === 'firewall') {
-      setCategory('profile');
-      setAccessDeniedOpen(true);
+      setCategory('profile');          // บังคับกลับมาที่ profile
+      setAccessDeniedOpen(true);       // เปิด modal แจ้ง "ไม่มีสิทธิ์"
     }
   }, [isGeneralView, category, setAccessDeniedOpen]);
 
-  // Profile
-  const [firstName, setFirstName] = useState(auth?.profile?.name || '');
-  const [lastName, setLastName] = useState(auth?.profile?.lastname || '');
-  const [email, setEmail] = useState(auth?.email || '');
+  // ── Profile Tab State ──────────────────────────────────────────────────────────
+  // โหลดข้อมูล profile จาก auth (context) เป็นค่าเริ่มต้น
+  // ถ้าไม่มีข้อมูล ใช้ค่า fallback ('Admin', 'User', etc.)
+  const [firstName, setFirstName] = useState(auth?.profile?.name || 'Admin');
+  const [lastName, setLastName] = useState(auth?.profile?.lastname || 'User');
+  const [email, setEmail] = useState(auth?.email || 'admin@cybershield.local');
   const [phone, setPhone] = useState(auth?.profile?.phone || '');
-  const [profileSaved, setProfileSaved] = useState(false);
+  const [profileSaved, setProfileSaved] = useState(false); // แสดงเครื่องหมาย ✓ หลังบันทึกสำเร็จ
 
+  /**
+   * saveProfile — บันทึก profile ใหม่ผ่าน updateProfile (จาก AppContext)
+   * General User ไม่สามารถทำได้ (isGeneralView guard)
+   */
   function saveProfile() {
-    if (isGeneralView) return;
+    if (isGeneralView) return;              // guard: ห้าม General User แก้ไข
     playSound('click');
     updateProfile({ name: firstName, lastname: lastName, phone });
-    setProfileSaved(true);
+    setProfileSaved(true);                  // แสดงข้อความ "บันทึกแล้ว"
   }
 
-  // Password reset (not connected to a backend — see plan)
+  // ── Password State (UI เท่านั้น — การเปลี่ยนรหัสผ่านจริงต้องทำผ่าน backend) ──
   const [currentPw, setCurrentPw] = useState('');
   const [newPw, setNewPw] = useState('');
   const [confirmPw, setConfirmPw] = useState('');
 
-  // Audio
+  // ── Audio Tab State ─────────────────────────────────────────────────────────────
+  // โหลดค่าจาก localStorage ผ่าน utils/sound.js (isSoundEnabled, getVolume)
   const [soundOn, setSoundOn] = useState(() => isSoundEnabled());
   const [volume, setVolume] = useState(() => getVolume());
 
+  /**
+   * handleSoundToggle — เปิด/ปิดเสียงแจ้งเตือนทั้งหมด
+   * - บันทึกลง localStorage ผ่าน saveSoundEnabled
+   * - ถ้าเปิดเสียง จะเล่นเสียง success ให้ผู้ใช้รับรู้ทันที
+   * @param {boolean} checked - true = เปิดเสียง
+   */
   function handleSoundToggle(checked) {
-    if (isGeneralView) return;
+    if (isGeneralView) return; // General User เปลี่ยนไม่ได้
     playSound('click');
     setSoundOn(checked);
     saveSoundEnabled(checked);
-    if (checked) setTimeout(() => playSound('success'), 100);
+    if (checked) setTimeout(() => playSound('success'), 100); // เล่นเสียงตัวอย่างหลังเปิด
   }
 
+  /**
+   * handleVolumeChange — ปรับระดับเสียง (0.0 – 1.0)
+   * บันทึกลง localStorage ผ่าน saveVolume ทันทีที่ slider เปลี่ยน
+   * @param {React.ChangeEvent<HTMLInputElement>} e
+   */
   function handleVolumeChange(e) {
     if (isGeneralView) return;
     const val = parseFloat(e.target.value);
@@ -55,18 +96,30 @@ export default function Settings() {
     saveVolume(val);
   }
 
-  // Display
+  // ── Display Tab State ────────────────────────────────────────────────────────
+  // compact mode: ลดระยะห่างและขนาด font ทั่วแอป (CSS class 'compact-theme' บน <html>)
   const [compactMode, setCompactMode] = useState(() => localStorage.getItem('cybershield_compact_mode') === 'true');
+
+  // refreshInterval: ความถี่ดึงข้อมูลจากเซิร์ฟเวอร์ (วินาที) — '5'|'10'|'30'|'60'
   const [refreshInterval, setRefreshInterval] = useState(() => localStorage.getItem('cybershield_refresh_interval') || '10');
 
+  /**
+   * handleCompactToggle — เปิด/ปิด compact mode
+   * toggle CSS class 'compact-theme' บน <html> ให้ CSS variables ทำงานทันที
+   * @param {boolean} checked - true = เปิด compact mode
+   */
   function handleCompactToggle(checked) {
     if (isGeneralView) return;
     playSound('click');
     setCompactMode(checked);
     localStorage.setItem('cybershield_compact_mode', checked ? 'true' : 'false');
-    document.documentElement.classList.toggle('compact-theme', checked);
+    document.documentElement.classList.toggle('compact-theme', checked); // ปรับ CSS ทั้งแอปทันที
   }
 
+  /**
+   * handleRefreshChange — เปลี่ยนช่วงเวลา refresh ข้อมูล
+   * @param {React.ChangeEvent<HTMLSelectElement>} e
+   */
   function handleRefreshChange(e) {
     if (isGeneralView) return;
     playSound('click');
@@ -74,236 +127,394 @@ export default function Settings() {
     localStorage.setItem('cybershield_refresh_interval', e.target.value);
   }
 
-  // Firewall — quarantine list lives in SQLite (backend/routes/incidents.py),
-  // shared with the Incidents page so a MITIGATED action shows up here too.
-  const [blockedIps, setBlockedIps] = useState([]);
+  // ── Firewall Tab State ─────────────────────────────────────────────────────
+  const [blockedIps, setBlockedIps] = useState([]); // รายการ IP ที่ถูกบล็อก (ดึงจาก API)
 
+  // โหลด blocked IPs จาก API ตอน component mount
   useEffect(() => { fetchBlockedIps(); }, []);
 
+  /**
+   * fetchBlockedIps — ดึงรายการ IP ที่ถูกบล็อกจาก API /api/blocked-ips
+   * อัปเดต state blockedIps เพื่อแสดงในตาราง Firewall
+   */
   async function fetchBlockedIps() {
     try {
       const res = await fetch('/api/blocked-ips');
       const data = await res.json();
-      if (data.ok) setBlockedIps(data.data.map((row) => row.ip));
-    } catch (err) {
-      console.error('Failed to fetch blocked IPs:', err);
-    }
+      if (data.ok) setBlockedIps(data.data.map(row => row.ip));
+    } catch { /* ถ้า API ไม่ตอบ ให้แสดงตารางว่าง */ }
   }
 
+  /**
+   * unblockIp — ปลดบล็อก IP ที่เลือกผ่าน API DELETE /api/blocked-ips/:ip
+   * General User ทำไม่ได้ (isGeneralView guard)
+   * @param {string} ip - IP Address ที่ต้องการปลดบล็อก
+   */
   async function unblockIp(ip) {
     if (isGeneralView) return;
     playSound('click');
     try {
       const res = await fetch(`/api/blocked-ips/${encodeURIComponent(ip)}`, { method: 'DELETE' });
       const data = await res.json();
-      if (data.ok) { setBlockedIps((prev) => prev.filter((item) => item !== ip)); playSound('success'); }
-    } catch (err) {
-      console.error('Failed to unblock IP:', err);
-    }
+      if (data.ok) { setBlockedIps(prev => prev.filter(item => item !== ip)); playSound('success'); }
+    } catch { }
   }
 
+  /**
+   * addDemoBlockedIp — เพิ่ม IP ทดสอบแบบสุ่มไปยัง blocked list (สำหรับ demo/ทดสอบ UI)
+   * สร้าง IP แบบสุ่มในช่วง 172.16.X.X แล้วส่ง POST /api/blocked-ips
+   */
   async function addDemoBlockedIp() {
     if (isGeneralView) return;
     playSound('click');
     const demoIp = `172.16.${Math.floor(Math.random() * 254 + 1)}.${Math.floor(Math.random() * 254 + 1)}`;
-    if (blockedIps.includes(demoIp)) return;
+    if (blockedIps.includes(demoIp)) return; // ไม่เพิ่ม IP ซ้ำ
     try {
       const res = await fetch('/api/blocked-ips', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ip: demoIp }),
       });
       const data = await res.json();
-      if (data.ok) { setBlockedIps((prev) => [...prev, demoIp]); playSound('success'); }
-    } catch (err) {
-      console.error('Failed to add blocked IP:', err);
-    }
+      if (data.ok) { setBlockedIps(prev => [...prev, demoIp]); playSound('success'); }
+    } catch { }
   }
 
-  const categories = [
-    { key: 'profile', label: t.settings.catProfile, icon: "M12 12c2.5 0 4.5-2 4.5-4.5S14.5 3 12 3 7.5 5 7.5 7.5 9.5 12 12 12Zm0 2c-4 0-7.5 2-7.5 5v1h15v-1c0-3-3.5-5-7.5-5Z" },
-    { key: 'general', label: t.settings.catGeneral, icon: "M12 12m-3 0a3 3 0 1 0 6 0a3 3 0 1 0 -6 0M12 3v3M12 18v3M3 12h3M18 12h3M5.5 5.5l2 2M16.5 16.5l2 2M5.5 18.5l2-2M16.5 7.5l2-2" },
-    { key: 'audio', label: t.settings.catAudio, icon: "M4 9v6h4l5 5V4L8 9H4Zm12.5 3a4.5 4.5 0 0 0-2.5-4v8a4.5 4.5 0 0 0 2.5-4Z" },
-    { key: 'display', label: t.settings.catDisplay, icon: "M3 4h18v12H3zM8 20h8M12 16v4" },
-    ...(isAdminActual ? [{ key: 'role', label: t.settings.catRole, icon: "M12 8a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM6 21v-2a6 6 0 0 1 12 0v2" }] : []),
-    ...(isGeneralView ? [] : [{ key: 'firewall', label: t.settings.catFirewall, icon: "M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6l7-3z" }]),
+  // ── รายการเมนูซ้าย (Sidebar Navigation ของ Settings) ─────────────────────────
+  // แสดง role/firewall tab เฉพาะเมื่อ user มีสิทธิ์ (isAdminActual / !isGeneralView)
+  const navItems = [
+    { key: 'profile',    label: 'โปรไฟล์',        icon: 'M12 12c2.5 0 4.5-2 4.5-4.5S14.5 3 12 3 7.5 5 7.5 7.5 9.5 12 12 12Zm0 2c-4 0-7.5 2-7.5 5v1h15v-1c0-3-3.5-5-7.5-5Z' },
+    { key: 'general',   label: 'ทั่วไป',           icon: 'M12 12m-3 0a3 3 0 1 0 6 0a3 3 0 1 0 -6 0M12 3v3M12 18v3M3 12h3M18 12h3M5.5 5.5l2 2M16.5 16.5l2 2M5.5 18.5l2-2M16.5 7.5l2-2' },
+    { key: 'audio',     label: 'เสียงแจ้งเตือน',   icon: 'M4 9v6h4l5 5V4L8 9H4Zm12.5 3a4.5 4.5 0 0 0-2.5-4v8a4.5 4.5 0 0 0 2.5-4Z' },
+    { key: 'display',   label: 'การแสดงผล',        icon: 'M3 4h18v12H3zM8 20h8M12 16v4' },
+    { key: 'connection',label: 'การเชื่อมต่อ',     icon: 'M12 3l9 16H3L12 3zM12 10v4M12 17h.01' },
+    ...(isAdminActual ? [{ key: 'role',     label: 'บทบาท',      icon: 'M12 8a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM6 21v-2a6 6 0 0 1 12 0v2' }] : []),     // เฉพาะ admin จริง
+    ...(!isGeneralView ? [{ key: 'firewall', label: 'ไฟร์วอลล์', icon: 'M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6l7-3z' }] : []),               // ซ่อนจาก General User
   ];
 
+  /**
+   * SegControl — Segmented Control (radio group แบบปุ่ม pill)
+   * ใช้แทน <select> เพื่อ UX ที่ดีกว่า (ธีม/ภาษา/เสียง ฯลฯ)
+   * @param {string} name - ชื่อ radio group (HTML name attribute)
+   * @param {string} value - ค่าที่เลือกอยู่
+   * @param {Array<{value, label}>} options - ตัวเลือกทั้งหมด
+   * @param {function} onChange - callback เมื่อเลือกค่าใหม่ รับ value string
+   * @param {boolean} [disabled] - ถ้า true ปิดการใช้งานทุกตัวเลือก
+   */
+  const SegControl = ({ name, value, options, onChange, disabled }) => (
+    <div style={{ display: 'flex', background: 'var(--gray-chip-bg)', borderRadius: 10, padding: 3, gap: 2 }}>
+      {options.map(opt => (
+        <label key={opt.value} style={{ cursor: disabled ? 'not-allowed' : 'pointer' }}>
+          <input type="radio" name={name} checked={value === opt.value} onChange={() => !disabled && onChange(opt.value)} style={{ display: 'none' }} />
+          <span style={{
+            display: 'block', padding: '7px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600, transition: 'all .15s',
+            background: value === opt.value ? 'var(--card-bg)' : 'transparent',
+            boxShadow: value === opt.value ? 'var(--shadow)' : 'none',
+            color: value === opt.value ? 'var(--text)' : 'var(--text-secondary)',
+          }}>
+            {opt.label}
+          </span>
+        </label>
+      ))}
+    </div>
+  );
+
+  /**
+   * SettingRow — แถวแสดงรายการตั้งค่า 1 รายการ
+   * ประกอบด้วย: label (หัวข้อ) + desc (คำอธิบาย) + children (control ทางขวา)
+   * @param {string|ReactNode} label - หัวข้อรายการ (ข้อความหรือ JSX)
+   * @param {string} [desc] - คำอธิบายสั้นๆ ด้านล่าง label
+   * @param {ReactNode} children - control ฝั่งขวา (SegControl, select, slider ฯลฯ)
+   */
+  const SettingRow = ({ label, desc, children }) => (
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 0', borderBottom: '1px solid var(--border-soft)', gap: 20, flexWrap: 'wrap' }}>
+      <div>
+        <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--text)' }}>{label}</div>
+        {desc && <div className="text-muted" style={{ fontSize: 12, marginTop: 3 }}>{desc}</div>}
+      </div>
+      {children}
+    </div>
+  );
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-6)' }}>
-      <div className="page-header" style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
-        <div className="dash-header-icon">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--color-accent)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 12m-3 0a3 3 0 1 0 6 0a3 3 0 1 0 -6 0M12 3v3M12 18v3M3 12h3M18 12h3M5.5 5.5l2 2M16.5 16.5l2 2M5.5 18.5l2-2M16.5 7.5l2-2" /></svg>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+      {/* ── Header ── */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+        <div style={{ width: 40, height: 40, borderRadius: 12, background: 'rgba(99,102,241,.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--accent)' }}>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+            <path d="M12 12m-3 0a3 3 0 1 0 6 0a3 3 0 1 0 -6 0M12 3v3M12 18v3M3 12h3M18 12h3M5.5 5.5l2 2M16.5 16.5l2 2M5.5 18.5l2-2M16.5 7.5l2-2" />
+          </svg>
         </div>
         <div>
-          <h2 style={{ margin: '0 0 4px' }}>{t.settings.title}</h2>
-          <p className="text-muted" style={{ margin: 0 }}>{t.settings.subtitle}</p>
+          <h2 style={{ margin: 0 }}>การตั้งค่า</h2>
+          <p className="text-muted" style={{ margin: 0, marginTop: 3, fontSize: 13 }}>จัดการโปรไฟล์ ภาษาและธีม เสียงแจ้งเตือน การแสดงผล และการกักกันของไฟร์วอลล์</p>
         </div>
       </div>
 
-      <div className="settings-layout">
-        <nav className="settings-nav">
-          {categories.map((c) => (
-            <a key={c.key} href="#" aria-current={category === c.key ? 'page' : undefined}
-              onClick={(e) => { e.preventDefault(); playSound('click'); setCategory(c.key); }}>
-              <span className="nav-icon"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d={c.icon} /></svg></span>
-              {c.label}
-            </a>
+      {/* ── Layout ── */}
+      <div style={{ display: 'grid', gridTemplateColumns: '220px 1fr', gap: 20, alignItems: 'start' }}>
+        {/* ── Sidebar Nav ── */}
+        <div className="card elev-sm" style={{ padding: '10px', display: 'flex', flexDirection: 'column', gap: 2 }}>
+          {navItems.map(item => (
+            <button key={item.key} onClick={() => { playSound('click'); setCategory(item.key); }}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 12, padding: '11px 14px', borderRadius: 10,
+                border: 'none', cursor: 'pointer', textAlign: 'left', fontSize: 13.5, fontWeight: 600, transition: 'all .15s',
+                background: category === item.key ? 'rgba(99,102,241,.12)' : 'transparent',
+                color: category === item.key ? 'var(--accent)' : 'var(--text-secondary)',
+              }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <path d={item.icon} />
+              </svg>
+              {item.label}
+            </button>
           ))}
-        </nav>
+        </div>
 
-        <div className="settings-content">
+        {/* ── Content ── */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+
+          {/* Profile */}
           {category === 'profile' && (
             <>
-              <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-3)' }}>
-                  <h3 style={{ margin: 0 }}>{t.settings.profileCardTitle}</h3>
-                  {profileSaved && <span className="tag tag-accent">{t.settings.profileSavedTag}</span>}
+              <div className="card elev-sm" style={{ padding: '24px 28px' }}>
+                <h3 style={SECTION_TITLE}>ข้อมูลส่วนตัว</h3>
+                <p style={SECTION_SUB}>แก้ไขชื่อ นามสกุล อีเมล และเบอร์โทรศัพท์ของคุณ</p>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-tertiary)' }}>ชื่อจริง</label>
+                    <input style={INPUT_STYLE} value={firstName} disabled={isGeneralView}
+                      onChange={e => { setFirstName(e.target.value); setProfileSaved(false); }} />
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-tertiary)' }}>นามสกุล</label>
+                    <input style={INPUT_STYLE} value={lastName} disabled={isGeneralView}
+                      onChange={e => { setLastName(e.target.value); setProfileSaved(false); }} />
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-tertiary)' }}>อีเมล</label>
+                    <input style={INPUT_STYLE} value={email} disabled={isGeneralView}
+                      onChange={e => { setEmail(e.target.value); setProfileSaved(false); }} />
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-tertiary)' }}>เบอร์โทรศัพท์</label>
+                    <input style={INPUT_STYLE} placeholder="ระบุเบอร์โทรศัพท์" value={phone} disabled={isGeneralView}
+                      onChange={e => { setPhone(e.target.value); setProfileSaved(false); }} />
+                  </div>
                 </div>
-                <div className="auth-grid">
-                  <div className="field"><label>{t.login.firstName}</label><input className="input" value={firstName} disabled={isGeneralView} onChange={(e) => { setFirstName(e.target.value); setProfileSaved(false); }} /></div>
-                  <div className="field"><label>{t.login.lastName}</label><input className="input" value={lastName} disabled={isGeneralView} onChange={(e) => { setLastName(e.target.value); setProfileSaved(false); }} /></div>
-                  <div className="field"><label>{t.login.email}</label><input className="input" value={email} disabled={isGeneralView} onChange={(e) => { setEmail(e.target.value); setProfileSaved(false); }} /></div>
-                  <div className="field"><label>{t.login.phone}</label><input className="input" value={phone} disabled={isGeneralView} onChange={(e) => { setPhone(e.target.value); setProfileSaved(false); }} /></div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 20 }}>
+                  <button className="btn btn-primary" onClick={saveProfile} disabled={isGeneralView}
+                    style={{ padding: '10px 22px' }}>
+                    บันทึกการเปลี่ยนแปลง
+                  </button>
+                  {profileSaved && (
+                    <span style={{ fontSize: 13, color: '#4ade80', display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600 }}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                      บันทึกแล้ว
+                    </span>
+                  )}
                 </div>
-                <button className="btn btn-primary" style={{ marginTop: 'var(--space-3)' }} onClick={saveProfile} disabled={isGeneralView}>{t.settings.profileSaveBtn}</button>
               </div>
 
-              <div>
-                <h3 style={{ margin: '0 0 var(--space-3) 0' }}>{t.settings.resetPwTitle}</h3>
-                <div className="auth-grid">
-                  <div className="field"><label>{t.settings.currentPwLabel}</label><input className="input" type="password" value={currentPw} onChange={(e) => setCurrentPw(e.target.value)} disabled /></div>
-                  <div></div>
-                  <div className="field"><label>{t.settings.newPwLabel}</label><input className="input" type="password" value={newPw} onChange={(e) => setNewPw(e.target.value)} disabled /></div>
-                  <div className="field"><label>{t.login.confirmPassword}</label><input className="input" type="password" value={confirmPw} onChange={(e) => setConfirmPw(e.target.value)} disabled /></div>
+              <div className="card elev-sm" style={{ padding: '24px 28px' }}>
+                <h3 style={SECTION_TITLE}>รีเซ็ตรหัสผ่าน</h3>
+                <p style={SECTION_SUB}>เปลี่ยนรหัสผ่านของบัญชีผู้ใช้งาน (ต้องใช้งานผ่านระบบหลังบ้าน)</p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxWidth: 400 }}>
+                    <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-tertiary)' }}>รหัสผ่านปัจจุบัน</label>
+                    <input style={INPUT_STYLE} type="password" value={currentPw} onChange={e => setCurrentPw(e.target.value)} disabled />
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-tertiary)' }}>รหัสผ่านใหม่ (อย่างน้อย 8 ตัวอักษร)</label>
+                      <input style={INPUT_STYLE} type="password" value={newPw} onChange={e => setNewPw(e.target.value)} disabled />
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-tertiary)' }}>ยืนยันรหัสผ่าน</label>
+                      <input style={INPUT_STYLE} type="password" value={confirmPw} onChange={e => setConfirmPw(e.target.value)} disabled />
+                    </div>
+                  </div>
                 </div>
-                <div className="text-muted" style={{ fontSize: 12, marginTop: 'var(--space-2)' }}>{t.settings.pwNotConnected}</div>
-                <button className="btn btn-secondary" style={{ marginTop: 'var(--space-3)' }} disabled>{t.settings.resetPwBtn}</button>
+                <button style={{ marginTop: 18, padding: '9px 20px', borderRadius: 9, border: '1px solid var(--border-soft)', background: 'transparent', color: 'var(--text-secondary)', cursor: 'not-allowed', fontSize: 13 }} disabled>
+                  รีเซ็ตรหัสผ่าน
+                </button>
               </div>
             </>
           )}
 
+          {/* General */}
           {category === 'general' && (
-            <div>
-              <h3 style={{ margin: '0 0 var(--space-3) 0' }}>{t.settings.catGeneral}</h3>
-              <div className="settings-row">
-                <div><div className="settings-row-label">{t.settings.languageLabel}</div><div className="settings-row-desc text-muted">{t.settings.languageDesc}</div></div>
-                <div className="seg">
-                  <label className="seg-opt"><input type="radio" name="lang" checked={lang === 'th'} onChange={() => setLang('th')} />ไทย</label>
-                  <label className="seg-opt"><input type="radio" name="lang" checked={lang === 'en'} onChange={() => setLang('en')} />English</label>
-                </div>
-              </div>
-              <div className="settings-row">
-                <div><div className="settings-row-label">{t.settings.themeLabel}</div><div className="settings-row-desc text-muted">{t.settings.themeDesc}</div></div>
-                <div className="seg">
-                  <label className="seg-opt"><input type="radio" name="theme" checked={theme === 'light'} onChange={() => setTheme('light')} />{t.settings.themeLight}</label>
-                  <label className="seg-opt"><input type="radio" name="theme" checked={theme === 'dark'} onChange={() => setTheme('dark')} />{t.settings.themeDark}</label>
-                </div>
-              </div>
+            <div className="card elev-sm" style={{ padding: '24px 28px' }}>
+              <h3 style={SECTION_TITLE}>ทั่วไป</h3>
+              <p style={SECTION_SUB}>ตั้งค่าภาษาและธีมของแอปพลิเคชัน</p>
+              <SettingRow label="ภาษา" desc="เลือกภาษาที่แสดงในหน้าเว็บ">
+                <SegControl name="lang" value={lang} options={[{ value: 'th', label: 'ไทย' }, { value: 'en', label: 'English' }]} onChange={v => setLang(v)} />
+              </SettingRow>
+              <SettingRow label="ธีม" desc="เลือกธีมสีสว่างหรือมืด">
+                <SegControl name="theme" value={theme} options={[{ value: 'light', label: '☀️ สว่าง' }, { value: 'dark', label: '🌙 มืด' }]} onChange={v => setTheme(v)} />
+              </SettingRow>
             </div>
           )}
 
+          {/* Audio */}
           {category === 'audio' && (
-            <div>
-              <h3 style={{ margin: '0 0 var(--space-3) 0' }}>{t.settings.audioCardTitle}</h3>
-              <div className="settings-row">
-                <div><div className="settings-row-label">{t.settings.audioToggleLabel}</div><div className="settings-row-desc text-muted">{t.settings.audioToggleDesc}</div></div>
-                <div className="seg">
-                  <label className="seg-opt"><input type="radio" name="siren" checked={soundOn} onChange={() => handleSoundToggle(true)} disabled={isGeneralView} />{t.settings.on}</label>
-                  <label className="seg-opt"><input type="radio" name="siren" checked={!soundOn} onChange={() => handleSoundToggle(false)} disabled={isGeneralView} />{t.settings.off}</label>
-                </div>
-              </div>
-              <div className="settings-row">
-                <div style={{ flex: 1 }}><div className="settings-row-label">{t.settings.volumeLabel}</div><div className="settings-row-desc text-muted">{t.settings.volumeDesc} ({Math.round(volume * 100)}%)</div></div>
-                <input type="range" min="0.05" max="1.0" step="0.05" value={volume} onChange={handleVolumeChange} disabled={!soundOn || isGeneralView} style={{ width: 160, accentColor: 'var(--color-accent)' }} />
-              </div>
-              <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap', paddingTop: 'var(--space-3)' }}>
-                <button className="btn btn-secondary" onClick={() => playSound('alert')} disabled={!soundOn}>{t.settings.testSiren}</button>
-                <button className="btn btn-secondary" onClick={() => playSound('critical')} disabled={!soundOn}>{t.settings.testPulse}</button>
-                <InfoHelp id="defcon1Sound" />
-                <button className="btn btn-secondary" onClick={() => playSound('click')} disabled={!soundOn}>{t.settings.testClick}</button>
-                <button className="btn btn-secondary" onClick={() => playSound('success')} disabled={!soundOn}>{t.settings.testChime}</button>
+            <div className="card elev-sm" style={{ padding: '24px 28px' }}>
+              <h3 style={SECTION_TITLE}>เสียงแจ้งเตือน</h3>
+              <p style={SECTION_SUB}>ปรับแต่งเสียงการแจ้งเตือนภัยคุกคามและระดับเสียง</p>
+              <SettingRow label="เปิดใช้งานเสียง" desc="เปิด/ปิดเสียงแจ้งเตือนทั้งหมด">
+                <SegControl name="siren" value={soundOn ? 'on' : 'off'} options={[{ value: 'on', label: 'เปิด' }, { value: 'off', label: 'ปิด' }]} onChange={v => handleSoundToggle(v === 'on')} disabled={isGeneralView} />
+              </SettingRow>
+              <SettingRow label={`ระดับเสียง (${Math.round(volume * 100)}%)`} desc="ปรับระดับเสียงของการแจ้งเตือน">
+                <input type="range" min="0.05" max="1.0" step="0.05" value={volume} onChange={handleVolumeChange}
+                  disabled={!soundOn || isGeneralView}
+                  style={{ width: 180, accentColor: 'var(--accent)' }} />
+              </SettingRow>
+              <div style={{ paddingTop: 16, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-tertiary)', alignSelf: 'center' }}>ทดสอบเสียง:</span>
+                {[['alert', '🚨 เสียงเตือน'], ['critical', '⚡ วิกฤต'], ['click', '🖱 คลิก'], ['success', '✓ สำเร็จ']].map(([key, label]) => (
+                  <button key={key} onClick={() => playSound(key)} disabled={!soundOn}
+                    style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid var(--border-soft)', background: 'var(--row-head-bg)', color: 'var(--text-secondary)', cursor: soundOn ? 'pointer' : 'not-allowed', fontSize: 12.5, opacity: soundOn ? 1 : .5 }}>
+                    {label}
+                  </button>
+                ))}
               </div>
             </div>
           )}
 
+          {/* Display */}
           {category === 'display' && (
-            <div>
-              <h3 style={{ margin: '0 0 var(--space-3) 0' }}>{t.settings.displayCardTitle}</h3>
-              <div className="settings-row">
-                <div><div className="settings-row-label">{t.settings.densityLabel} <InfoHelp id="compactModeHelp" /></div><div className="settings-row-desc text-muted">{t.settings.densityDesc}</div></div>
-                <div className="seg">
-                  <label className="seg-opt"><input type="radio" name="density" checked={compactMode} onChange={() => handleCompactToggle(true)} disabled={isGeneralView} />{t.settings.on}</label>
-                  <label className="seg-opt"><input type="radio" name="density" checked={!compactMode} onChange={() => handleCompactToggle(false)} disabled={isGeneralView} />{t.settings.off}</label>
-                </div>
-              </div>
-              <div className="settings-row">
-                <div><div className="settings-row-label">{t.settings.refreshLabel} <InfoHelp id="refreshIntervalHelp" /></div><div className="settings-row-desc text-muted">{t.settings.refreshDesc}</div></div>
-                <select className="input" style={{ width: 200 }} value={refreshInterval} onChange={handleRefreshChange} disabled={isGeneralView}>
-                  <option value="5">{t.settings.every5}</option>
-                  <option value="10">{t.settings.every10}</option>
-                  <option value="30">{t.settings.every30}</option>
-                  <option value="60">{t.settings.every60}</option>
+            <div className="card elev-sm" style={{ padding: '24px 28px' }}>
+              <h3 style={SECTION_TITLE}>การแสดงผล</h3>
+              <p style={SECTION_SUB}>ตั้งค่าความหนาแน่นของการแสดงผลและช่วงเวลารีเฟรช</p>
+              <SettingRow label={<>โหมดกะทัดรัด <InfoHelp id="compactModeHelp" /></>} desc="ลดระยะห่างและขนาดองค์ประกอบต่างๆ">
+                <SegControl name="density" value={compactMode ? 'on' : 'off'} options={[{ value: 'on', label: 'เปิด' }, { value: 'off', label: 'ปิด' }]} onChange={v => handleCompactToggle(v === 'on')} disabled={isGeneralView} />
+              </SettingRow>
+              <SettingRow label={<>ช่วงเวลารีเฟรช <InfoHelp id="refreshIntervalHelp" /></>} desc="ความถี่ในการดึงข้อมูลใหม่จากเซิร์ฟเวอร์">
+                <select value={refreshInterval} onChange={handleRefreshChange} disabled={isGeneralView}
+                  style={{ padding: '9px 14px', borderRadius: 9, border: '1px solid var(--border-soft)', background: 'var(--row-head-bg)', color: 'var(--text)', fontSize: 13, cursor: 'pointer' }}>
+                  <option value="5">ทุก 5 วินาที</option>
+                  <option value="10">ทุก 10 วินาที</option>
+                  <option value="30">ทุก 30 วินาที</option>
+                  <option value="60">ทุก 60 วินาที</option>
                 </select>
+              </SettingRow>
+            </div>
+          )}
+
+          {/* Connection */}
+          {category === 'connection' && (
+            <div className="card elev-sm" style={{ padding: '24px 28px' }}>
+              <h3 style={SECTION_TITLE}>สถานะการเชื่อมต่อ</h3>
+              <p style={SECTION_SUB}>สถานะปัจจุบันของฟีดข้อมูลสด และแผงจำลองสถานะสำหรับสาธิต/ทดสอบ</p>
+
+              <SettingRow label="สถานะปัจจุบัน" desc="คลิกที่ badge มุมซ้ายบนของแถบด้านข้างเพื่อสลับเชื่อมต่อสด/ขาดการเชื่อมต่อโดยตรง">
+                <span className={`conn-badge ${conn.status}`} style={{ width: 'auto', cursor: 'default' }}>
+                  <span className="conn-dot"></span>
+                  {conn.status === CONN_STATUS.CONNECTED ? 'เชื่อมต่อสด (Real-time)' :
+                    conn.status === CONN_STATUS.RECONNECTING ? 'กำลังเชื่อมต่อใหม่...' :
+                    conn.status === CONN_STATUS.DEGRADED ? 'การเชื่อมต่อไม่เสถียร' : 'ขาดการเชื่อมต่อ'}
+                </span>
+              </SettingRow>
+              {conn.status === CONN_STATUS.CONNECTED && (
+                <SettingRow label="อัปเดตล่าสุดเมื่อ" desc="เวลาที่ข้อมูลสดเข้ามาล่าสุด">
+                  <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{relativeTimeTh(conn.lastUpdate)}</span>
+                </SettingRow>
+              )}
+
+              <div style={{ marginTop: 20, padding: '18px 20px', borderRadius: 12, background: 'var(--row-head-bg)', border: '1px solid var(--border-soft)' }}>
+                <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 4, color: 'var(--text)' }}>จำลองสถานะ (Demo)</div>
+                <p style={{ ...SECTION_SUB, margin: '0 0 14px' }}>
+                  สำหรับสาธิต/ทดสอบเพิ่มเติมเท่านั้น — เชื่อมต่อสด/ขาดการเชื่อมต่อสลับได้ตรงจาก badge หลักอยู่แล้ว ส่วนนี้ไว้ดูว่า UI แสดงผลอย่างไรตอน "กำลังเชื่อมต่อใหม่" หรือ "ไม่เสถียร" ซึ่งปกติระบบจะเปลี่ยนเองอัตโนมัติเมื่อเน็ตมีปัญหาจริง ไม่ใช่สิ่งที่ผู้ใช้กดเลือกเอง
+                </p>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 10 }}>
+                  <button className="conn-menu-option" onClick={() => { playSound('click'); conn.simulate.connected(); }}>
+                    <span className="conn-menu-mark conn-menu-mark-green">✓</span> เชื่อมต่อสด
+                  </button>
+                  <button className="conn-menu-option" onClick={() => { playSound('click'); conn.simulate.reconnecting(); }}>
+                    <span className="conn-menu-mark conn-menu-mark-orange">↻</span> กำลังเชื่อมต่อใหม่
+                  </button>
+                  <button className="conn-menu-option" onClick={() => { playSound('click'); conn.simulate.degraded(); }}>
+                    <span className="conn-menu-mark conn-menu-mark-yellow">!</span> การเชื่อมต่อไม่เสถียร
+                  </button>
+                  <button className="conn-menu-option" onClick={() => { playSound('click'); conn.simulate.disconnected(); }}>
+                    <span className="conn-menu-mark conn-menu-mark-red">×</span> ขาดการเชื่อมต่อ
+                  </button>
+                </div>
               </div>
             </div>
           )}
 
+          {/* Role */}
           {category === 'role' && isAdminActual && (
-            <div>
-              <h3 style={{ margin: '0 0 var(--space-3) 0' }}>{t.settings.roleCardTitle}</h3>
-              <div className="settings-row">
-                <div><div className="settings-row-label">{t.settings.roleLabel} <InfoHelp id="currentViewHelp" /></div><div className="settings-row-desc text-muted">{t.settings.roleDesc}</div></div>
-                <div className="seg">
-                  <label className="seg-opt"><input type="radio" name="rolePreview" checked={!previewAsGeneral} onChange={() => setPreviewAsGeneral(false)} />{t.settings.roleAdminOpt}</label>
-                  <label className="seg-opt"><input type="radio" name="rolePreview" checked={previewAsGeneral} onChange={() => setPreviewAsGeneral(true)} />{t.settings.roleGeneralOpt}</label>
-                </div>
-              </div>
+            <div className="card elev-sm" style={{ padding: '24px 28px' }}>
+              <h3 style={SECTION_TITLE}>บทบาทผู้ใช้งาน</h3>
+              <p style={SECTION_SUB}>สลับมุมมองเพื่อดูอินเทอร์เฟซในฐานะผู้ใช้งานทั่วไป</p>
+              <SettingRow label={<>มุมมองปัจจุบัน <InfoHelp id="currentViewHelp" /></>} desc="เลือกประเภทการเข้าถึงที่ต้องการดูตอนนี้">
+                <SegControl name="rolePreview" value={previewAsGeneral ? 'general' : 'admin'}
+                  options={[{ value: 'admin', label: '🔑 ผู้ดูแลระบบ' }, { value: 'general', label: '👤 ผู้ใช้ทั่วไป' }]}
+                  onChange={v => setPreviewAsGeneral(v === 'general')} />
+              </SettingRow>
               {!previewAsGeneral && (
-                <div style={{ padding: 'var(--space-3) 0' }}>
-                  <div className="settings-row-label" style={{ marginBottom: 'var(--space-3)' }}>{t.settings.usageCardTitle}</div>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 'var(--space-4)' }}>
-                    <div><div style={{ fontFamily: 'var(--font-heading)', fontSize: 24 }}>18</div><div className="text-muted" style={{ fontSize: 11 }}>{t.settings.usageActiveUsers}</div></div>
-                    <div><div style={{ fontFamily: 'var(--font-heading)', fontSize: 24 }}>3</div><div className="text-muted" style={{ fontSize: 11 }}>{t.settings.usageSignups}</div></div>
-                    <div><div style={{ fontFamily: 'var(--font-heading)', fontSize: 24 }}>47</div><div className="text-muted" style={{ fontSize: 11 }}>{t.settings.usageSessions}</div></div>
-                    <div><div style={{ fontFamily: 'var(--font-heading)', fontSize: 24 }}>6m 12s</div><div className="text-muted" style={{ fontSize: 11 }}>{t.settings.usageAvgSession}</div></div>
+                <div style={{ marginTop: 20, padding: '18px 20px', borderRadius: 12, background: 'var(--row-head-bg)', border: '1px solid var(--border-soft)' }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 16, color: 'var(--text)' }}>ข้อมูลการใช้งาน</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 16 }}>
+                    {[['18', 'ผู้ใช้ที่ใช้งานอยู่'], ['3', 'สมัครใหม่วันนี้'], ['47', 'เซสชันทั้งหมด'], ['6m 12s', 'เวลาเซสชันเฉลี่ย']].map(([val, label]) => (
+                      <div key={label}>
+                        <div style={{ fontSize: 22, fontWeight: 800, color: 'var(--text)' }}>{val}</div>
+                        <div className="text-muted" style={{ fontSize: 11.5, marginTop: 3 }}>{label}</div>
+                      </div>
+                    ))}
                   </div>
                 </div>
               )}
             </div>
           )}
 
-          {category === 'firewall' && (
-            <div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-3)' }}>
-                <h3 style={{ margin: 0 }}>{t.settings.firewallTitle} <InfoHelp id="firewallHelp" /> <InfoHelp id="quarantineIp" /></h3>
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                  <button className="btn btn-secondary" onClick={addDemoBlockedIp} disabled={isGeneralView}>{t.settings.addBlockBtn}</button>
+          {/* Firewall */}
+          {category === 'firewall' && !isGeneralView && (
+            <div className="card elev-sm" style={{ padding: '24px 28px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                <h3 style={{ ...SECTION_TITLE, margin: 0 }}>
+                  รายการกักกัน IP <InfoHelp id="firewallHelp" /> <InfoHelp id="quarantineIp" />
+                </h3>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <button onClick={addDemoBlockedIp} disabled={isGeneralView}
+                    style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid var(--border-soft)', background: 'var(--row-head-bg)', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: 12.5, display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                    เพิ่ม IP ทดสอบ
+                  </button>
                   <InfoHelp id="simulateBlockHelp" />
-                </span>
+                </div>
               </div>
-              <div>
-                {blockedIps.length === 0 ? (
-                  <div className="text-muted" style={{ fontSize: 13 }}>{t.settings.firewallEmpty}</div>
-                ) : (
-                  blockedIps.map((ip) => (
-                    <div key={ip} className="blocked-ip-row">
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                        <span className="stat-icon-box icon-box-red" style={{ width: 30, height: 30 }}>
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6l7-3z" /><path d="M9.5 9.5l5 5M14.5 9.5l-5 5" /></svg>
-                        </span>
-                        <span className="mono" style={{ fontSize: 13 }}>{ip}</span>
+              <p style={SECTION_SUB}>รายการ IP Address ที่ถูกบล็อกโดยระบบป้องกันภัย</p>
+              {blockedIps.length === 0 ? (
+                <div style={{ padding: '32px 0', textAlign: 'center', color: 'var(--text-tertiary)', fontSize: 13 }}>
+                  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" style={{ marginBottom: 10, opacity: .4 }}><path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6l7-3z"></path><path d="M9.5 9.5l5 5M14.5 9.5l-5 5"></path></svg>
+                  <div>ไม่มี IP ที่ถูกบล็อกในขณะนี้</div>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+                  {blockedIps.map((ip, i) => (
+                    <div key={ip} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 0', borderBottom: i < blockedIps.length - 1 ? '1px solid var(--border-soft)' : 'none' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                        <div style={{ width: 34, height: 34, borderRadius: 10, background: 'rgba(239,68,68,.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#f87171' }}>
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6l7-3z" /><path d="M9.5 9.5l5 5M14.5 9.5l-5 5" /></svg>
+                        </div>
+                        <span className="mono" style={{ fontSize: 13.5, fontWeight: 600 }}>{ip}</span>
                       </div>
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                        <button className="btn btn-ghost" style={{ fontSize: 12 }} onClick={() => unblockIp(ip)} disabled={isGeneralView}>{t.settings.unblockBtn}</button>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <button onClick={() => unblockIp(ip)} disabled={isGeneralView}
+                          style={{ padding: '7px 14px', borderRadius: 8, border: '1px solid var(--border-soft)', background: 'transparent', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: 12.5, fontWeight: 600 }}>
+                          ปลดบล็อก
+                        </button>
                         <InfoHelp id="unblockHelp" />
-                      </span>
+                      </div>
                     </div>
-                  ))
-                )}
-              </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
+
         </div>
       </div>
     </div>

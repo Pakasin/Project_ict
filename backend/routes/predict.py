@@ -27,7 +27,7 @@ router = APIRouter(prefix="/api", tags=["predict"])
 class PredictRequest(BaseModel):
     """Request body สำหรับ manual prediction"""
     model_name: str            # "intrusion" | "flow" | "sqli"
-    features: list[float] | None = None   # สำหรับ intrusion / flow
+    features: list[float] | None = None   # สำหรับ intrusion / flow (feature vector)
     payload: str | None = None            # สำหรับ sqli (raw query text)
 
 
@@ -45,9 +45,9 @@ class PredictResponse(BaseModel):
     error: str | None = None
 
 
-# Single-flow requests zero-pad 9 of the 10 window rows. Training data never
-# included padded windows (incomplete windows were dropped), so this is a
-# best-effort approximation — surfaced to the UI instead of hidden.
+# คำขอ single-flow จะ zero-pad 9 จาก 10 window rows
+# โมเดลไม่เคยเห็น window ที่มี padding ตอนเทรน (ไม่ครบถูกตัดทิ้ง)
+# จึงแสดง caveat ใน UI แทนที่ซ่อนไว้
 WINDOW_CAVEAT = (
     "Single-sample request — window zero-padded to 10 rows. "
     "Model was never trained on padded windows, so treat this result as approximate."
@@ -76,7 +76,7 @@ async def predict(body: PredictRequest, request: Request):
 async def _predict_intrusion(body: PredictRequest, request: Request) -> PredictResponse:
     """Intrusion Model (NSL-KDD) — 41 features → 3-class softmax"""
     if not body.features or len(body.features) != 41:
-        raise HTTPException(status_code=400, detail="Intrusion Model requires exactly 41 features")
+        raise HTTPException(status_code=400, detail="Intrusion Model ต้องการพอดี 41 features")
 
     model = request.app.state.model_intrusion
     scaler = request.app.state.scaler_intrusion
@@ -98,7 +98,7 @@ async def _predict_intrusion(body: PredictRequest, request: Request) -> PredictR
 async def _predict_flow(body: PredictRequest, request: Request) -> PredictResponse:
     """Flow Model (CSE-CIC-IDS2018) — 78 raw features → scale → slice 71 → 4-class softmax"""
     if not body.features or len(body.features) != 78:
-        raise HTTPException(status_code=400, detail="Flow Model requires exactly 78 raw features")
+        raise HTTPException(status_code=400, detail="Flow Model ต้องการพอดี 78 raw features")
 
     model = request.app.state.model_flow
     scaler = request.app.state.scaler_flow
@@ -124,11 +124,11 @@ async def _predict_flow(body: PredictRequest, request: Request) -> PredictRespon
 async def _predict_sqli(body: PredictRequest, request: Request) -> PredictResponse:
     """Injection Model (SQLi) — char-level Embedding → LSTM → sigmoid"""
     if not body.payload:
-        raise HTTPException(status_code=400, detail="SQLi Model requires a payload (raw query text)")
+        raise HTTPException(status_code=400, detail="SQLi Model ต้องการ payload (ข้อความ query ดิบ)")
 
     model = request.app.state.model_sqli
     if model is None:
-        return PredictResponse(ok=False, error="SQLi model failed to load — check server startup logs")
+        return PredictResponse(ok=False, error="SQLi model โหลดไม่สำเร็จ — ตรวจสอบ log ตอน startup")
 
     word_index = request.app.state.sqli_word_index
     threshold = float(os.getenv("THRESHOLD_SQLI", "0.75"))
