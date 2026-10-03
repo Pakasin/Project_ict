@@ -1,210 +1,648 @@
-import { useEffect, useState } from 'react'
+// ─────────────────────────────────────────────────────────────────────────────
+// pages/Logs.jsx — หน้าดูเอกสารเหตุการณ์ทั้งหมด (Security Event Logs)
+//
+// ประกอบด้วย:
+//   - ตาราง log พร้อม filter (attack type, severity, status, model, date range) + search
+//   - คลิกแถวเปิด ThreatInspectModal เพื่อดูรายละเอียด
+//   - Pagination แบบ 10 รายการต่อหน้า
+//   - Export CSV: ส่งออก log เป็นไฟล์ CSV สำหรับการวิเคราะห์ต่อ
+//   - ดึงข้อมูลจาก API (/api/logs) ใช้ MOCK_LOGS เป็น fallback
+//   - เพิ่มเข้า Incidents เมื่อกด "Triage Event" บน alert row
+// ─────────────────────────────────────────────────────────────────────────────
+
+import { useState } from 'react'
+import React from 'react'
 import { useNavigate } from 'react-router-dom'
 import ThreatInspectModal from '../components/ThreatInspectModal'
 import InfoHelp from '../components/InfoHelp'
 import { playSound } from '../utils/sound'
 import { useApp } from '../context/AppContext'
 
+// ── Mock Data: ข้อมูลตัวอย่างสำรอง ──────────────────────────────────────────
+// แสดงเมื่อ API /api/logs ยังไม่มี data หรือเชื่อมต่อไม่ได้
+// แต่ละ object = 1 security event
+// ⚡ แก้ข้อมูลที่นี่ → เห็นผลทันทีในตาราง Log
+const MOCK_LOGS = [
+  { id: 1042, timestamp: '2025-05-26T09:41:07', ref: 'EVT-2025-1042', attack_class: 'SQL Injection', source_ip: '192.168.1.45', target: 'srv-db-01', severity: 'วิกฤต', sevKey: 'CRITICAL', status: 'บล็อกแล้ว', statusKey: 'BLOCKED', model_name: 'Injection LSTM', confidence: 0.97, is_alert: true },
+  { id: 1041, timestamp: '2025-05-25T22:18:53', ref: 'EVT-2025-1041', attack_class: 'Brute Force',   source_ip: '45.33.22.11',  target: 'srv-web-02', severity: 'สูง',   sevKey: 'HIGH',     status: 'กำลังตรวจสอบ', statusKey: 'INVESTIGATING', model_name: 'Intrusion LSTM', confidence: 0.91, is_alert: true },
+  { id: 1040, timestamp: '2025-05-25T18:02:31', ref: 'EVT-2025-1040', attack_class: 'Port Scan',     source_ip: '112.54.33.2',  target: 'dmz-fw-01',  severity: 'ปานกลาง', sevKey: 'MEDIUM', status: 'บล็อกแล้ว',       statusKey: 'BLOCKED',       model_name: 'Intrusion LSTM', confidence: 0.83, is_alert: true },
+  { id: 1039, timestamp: '2025-05-24T11:47:19', ref: 'EVT-2025-1039', attack_class: 'DDoS',          source_ip: '203.0.113.9',  target: 'lb-edge-01', severity: 'วิกฤต', sevKey: 'CRITICAL', status: 'แก้ไขแล้ว',    statusKey: 'MITIGATED',    model_name: 'Flow LSTM',      confidence: 0.96, is_alert: true },
+  { id: 1038, timestamp: '2025-05-23T08:15:02', ref: 'EVT-2025-1038', attack_class: 'Suspicious Activity', source_ip: '198.51.100.4', target: 'srv-auth-01', severity: 'ปานกลาง', sevKey: 'MEDIUM', status: 'แก้ไขแล้ว', statusKey: 'MITIGATED', model_name: 'Intrusion LSTM', confidence: 0.79, is_alert: false },
+  { id: 1037, timestamp: '2025-05-22T20:33:44', ref: 'EVT-2025-1037', attack_class: 'Brute Force',   source_ip: '77.68.45.12',  target: 'srv-web-01', severity: 'สูง',   sevKey: 'HIGH',     status: 'บล็อกแล้ว',    statusKey: 'BLOCKED',       model_name: 'Intrusion LSTM', confidence: 0.92, is_alert: true },
+]
+
+// ── สี badge ของระดับความรุนแรง (Severity) ──────────────────────────────────
+// ⚡ แก้สีที่นี่ → badge ในตาราง Log เปลี่ยนทันที
+// bg = สีพื้นหลัง badge (rgba), color = สีตัวอักษร
+const SEV_CONFIG = {
+  CRITICAL: { label: 'วิกฤต',    bg: 'rgba(239,68,68,.15)',  color: '#f87171' }, // แดง
+  HIGH:     { label: 'สูง',      bg: 'rgba(249,115,22,.15)', color: '#fb923c' }, // ส้ม
+  MEDIUM:   { label: 'ปานกลาง', bg: 'rgba(234,179,8,.15)',  color: '#fbbf24' }, // เหลือง
+  LOW:      { label: 'ต่ำ',      bg: 'rgba(34,197,94,.12)',  color: '#4ade80' }, // เขียว
+}
+
+// ── สี badge ของสถานะ (Status) ───────────────────────────────────────────────
+// ⚡ แก้ label ภาษาไทยที่นี่ → เห็นผลทันทีในตาราง
+const STATUS_CONFIG = {
+  BLOCKED:       { label: 'บล็อกแล้ว',    bg: 'rgba(239,68,68,.08)',  color: '#f87171' }, // แดง
+  INVESTIGATING: { label: 'กำลังตรวจสอบ', bg: 'rgba(251,191,36,.1)',  color: '#fbbf24' }, // เหลือง
+  MITIGATED:     { label: 'แก้ไขแล้ว',    bg: 'rgba(74,222,128,.1)',  color: '#4ade80' }, // เขียว
+  OPEN:          { label: 'เปิดอยู่',      bg: 'rgba(239,68,68,.1)',   color: '#f87171' }, // แดง
+}
+
+// ── สี badge ของประเภทการโจมตี (Attack Type) ─────────────────────────────────
+// ⚡ เพิ่ม attack type ใหม่ที่นี่ → badge จะมีสีแทนสี default
+const ATTACK_PILL = {
+  'SQL Injection':       { bg: 'rgba(239,68,68,.15)',   color: '#f87171' }, // แดง
+  'Brute Force':         { bg: 'rgba(249,115,22,.15)',  color: '#fb923c' }, // ส้ม
+  'DDoS':                { bg: 'rgba(239,68,68,.15)',   color: '#f87171' }, // แดง
+  'Port Scan':           { bg: 'rgba(234,179,8,.15)',   color: '#fbbf24' }, // เหลือง
+  'Suspicious Activity': { bg: 'rgba(148,163,184,.12)', color: '#94a3b8' }, // เทา
+  'R2L':                 { bg: 'rgba(234,179,8,.15)',   color: '#fbbf24' }, // เหลือง
+  'U2R':                 { bg: 'rgba(249,115,22,.15)',  color: '#fb923c' }, // ส้ม
+  'DoS':                 { bg: 'rgba(239,68,68,.15)',   color: '#f87171' }, // แดง
+}
+
+// ── Thai Date Picker (Date Range) ───────────────────────────────────────
+const TH_MONTHS_L = ['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน','กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม'];
+const TH_MONTHS_S = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
+const TH_DOW = ['จันทร์','อังคาร','พุธ','พฤหัส','ศุกร์','เสาร์','อาทิตย์'];
+
+/**
+ * ThaiDP — Thai Date Picker (compact version สำหรับ Logs.jsx)
+ * คล้ายกับ ThaiDatePicker ใน Incidents.jsx แต่ compact กว่า เพราะใช้ใน filter date range
+ * @param {string} value     - ISO string 'YYYY-MM-DD' (วันที่เลือก)
+ * @param {function} onChange - callback ส่ง ISO string กลับ
+ * @param {string} placeholder - ข้อความในปุ่มเมื่อยังไม่มีค่า
+ * @param {string} [minDate]   - ISO string เพื่อจำกัดวันที่เริ่มต้น (disabled วันที่ก่อนนั้น)
+ */
+function ThaiDP({ value, onChange, placeholder = 'วันที่…', minDate }) {
+  const [open, setOpen] = React.useState(false);
+  const [pv, setPv] = React.useState('day'); // 'day'|'month'|'year'
+  const [view, setView] = React.useState(() => value ? new Date(value + 'T00:00:00') : new Date());
+  const [input, setInput] = React.useState(() => {
+    if (!value) return '';
+    const d = new Date(value + 'T00:00:00');
+    return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()+543}`;
+  });
+  const ref = React.useRef(null);
+  React.useEffect(() => {
+    const h = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
+  }, []);
+  React.useEffect(() => {
+    if (!value) { setInput(''); return; }
+    const d = new Date(value + 'T00:00:00');
+    setInput(`${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()+543}`);
+  }, [value]);
+
+  const yr = view.getFullYear(), mo = view.getMonth(), byr = yr + 543;
+  const startOff = (new Date(yr, mo, 1).getDay() + 6) % 7;
+  const dim = new Date(yr, mo + 1, 0).getDate();
+  const sel = value ? new Date(value + 'T00:00:00') : null;
+  const isSel = (d) => sel && d === sel.getDate() && mo === sel.getMonth() && yr === sel.getFullYear();
+  const isMin = (d) => { if (!minDate) return false; return new Date(yr, mo, d) < new Date(minDate + 'T00:00:00'); };
+  const isToday2 = (d) => { const t = new Date(); return d===t.getDate()&&mo===t.getMonth()&&yr===t.getFullYear(); };
+  const yrStart = Math.floor((yr-543)/12)*12;
+  const yrs = Array.from({length:12},(_,i)=>yrStart+i+543);
+
+  function commit(day) {
+    const d = new Date(yr, mo, day);
+    if (minDate && d < new Date(minDate + 'T00:00:00')) return;
+    onChange(d.toISOString().slice(0,10));
+    setInput(`${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()+543}`);
+    setOpen(false); setPv('day');
+  }
+  function parseIn(raw) {
+    const p = raw.replace(/-/g,'/').trim().split('/');
+    if (p.length!==3) return null;
+    const [dd,mm,yy] = p.map(Number);
+    if ([dd,mm,yy].some(isNaN)) return null;
+    const cy = yy>2500?yy-543:yy;
+    if (mm<1||mm>12||dd<1||dd>31||cy<1900||cy>2200) return null;
+    const d = new Date(cy,mm-1,dd);
+    return d.getMonth()===mm-1?d:null;
+  }
+  function onInputChange(e) {
+    let r = e.target.value.replace(/[^0-9/]/g,'');
+    if (r.length===2&&!r.includes('/')) r+='/';
+    if (r.length===5&&r.split('/').length===2) r+='/';
+    if (r.length>10) r=r.slice(0,10);
+    setInput(r);
+    const d = parseIn(r);
+    if (d) { onChange(d.toISOString().slice(0,10)); setView(d); }
+  }
+  function onKD(e) {
+    if (e.key==='Enter') { const d=parseIn(input); if(d){onChange(d.toISOString().slice(0,10));setView(d);setOpen(false);} }
+    if (e.key==='Escape') setOpen(false);
+  }
+  const nb = { background:'none',border:'none',cursor:'pointer',color:'var(--text-secondary)',padding:'3px 7px',borderRadius:6,fontSize:17,lineHeight:1 };
+  const hb = (cur) => ({ background:'none',border:'none',cursor:'pointer',fontWeight:700,fontSize:13,color:'var(--text)',padding:'2px 8px',borderRadius:6,transition:'background .12s' });
+
+  return (
+    <div ref={ref} style={{position:'relative',flex:1}}>
+      <button onClick={()=>{
+        // sync view → selected date on open so highlight is always visible
+        if (value) setView(new Date(value + 'T00:00:00'));
+        setOpen(o=>!o); setPv('day');
+      }}
+        style={{display:'flex',alignItems:'center',gap:8,padding:'9px 12px',borderRadius:8,width:'100%',
+          border:`1.5px solid ${open?'var(--accent)':'var(--border-soft)'}`,
+          background:'var(--row-head-bg)',color:value?'var(--text)':'var(--text-secondary)',
+          cursor:'pointer',fontSize:13,fontWeight:value?600:400,transition:'border-color .15s',textAlign:'left'}}>
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/>
+          <line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
+        </svg>
+        <span style={{flex:1}}>{value ? input : placeholder}</span>
+        {value && <span onClick={e=>{e.stopPropagation();onChange('');setInput('');}} style={{opacity:.5,fontSize:14}}>✕</span>}
+      </button>
+      {open && (
+        <div style={{position:'absolute',top:'calc(100% + 6px)',left:0,zIndex:300,
+          background:'var(--card-bg)',border:'1px solid var(--border-soft)',
+          borderRadius:14,boxShadow:'0 8px 32px rgba(0,0,0,.2)',padding:14,minWidth:276}}>
+          {/* text input */}
+          <div style={{marginBottom:10,display:'flex',alignItems:'center',gap:8,
+            background:'var(--row-head-bg)',border:'1px solid var(--border-soft)',
+            borderRadius:7,padding:'6px 10px'}}>
+            <input value={input} onChange={onInputChange} onKeyDown={onKD}
+              placeholder="วว/ดด/ปปปป (พ.ศ.)"
+              style={{border:'none',background:'transparent',outline:'none',fontSize:12.5,color:'var(--text)',flex:1,fontFamily:'inherit'}} />
+          </div>
+          {pv==='day'&&(<>
+            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}}>
+              <button style={nb} onClick={()=>setView(new Date(yr,mo-1,1))}>&#8249;</button>
+              <div style={{display:'flex',gap:4}}>
+                <button style={hb()} onMouseEnter={e=>e.currentTarget.style.background='var(--row-head-bg)'} onMouseLeave={e=>e.currentTarget.style.background='none'} onClick={()=>setPv('month')}>{TH_MONTHS_L[mo]}</button>
+                <button style={{...hb(),color:'var(--text-secondary)',fontWeight:500}} onMouseEnter={e=>e.currentTarget.style.background='var(--row-head-bg)'} onMouseLeave={e=>e.currentTarget.style.background='none'} onClick={()=>setPv('year')}>{byr}</button>
+              </div>
+              <button style={nb} onClick={()=>setView(new Date(yr,mo+1,1))}>&#8250;</button>
+            </div>
+            <div style={{display:'grid',gridTemplateColumns:'repeat(7,1fr)',gap:2,marginBottom:3}}>
+              {TH_DOW.map(d=><div key={d} style={{textAlign:'center',fontSize:9.5,fontWeight:600,color:'var(--text-tertiary)',padding:'1px 0'}}>{d}</div>)}
+            </div>
+            <div style={{display:'grid',gridTemplateColumns:'repeat(7,1fr)',gap:2}}>
+              {Array(startOff).fill(null).map((_,i)=><div key={'e'+i}/>)}
+              {Array(dim).fill(null).map((_,i)=>{
+                // s = isSelected: วันที่ user เลือกจริงๆ จาก prop value เท่านั้น
+                // t = isToday: วันนี้ของระบบ — เป็นคนละ state กับ s อย่างเด็ดขาด
+                const day=i+1, s=isSel(day), t=isToday2(day), dis=isMin(day);
+                return <button key={day} onClick={()=>commit(day)} disabled={dis}
+                  style={{
+                    position:'relative',
+                    width:'100%', aspectRatio:'1', borderRadius:7, cursor:dis?'not-allowed':'pointer',
+                    fontSize:12, fontWeight:s?700:400, opacity:dis?.3:1,
+                    transition:'background .12s, border-color .12s',
+                    // selected: สีฟ้าจาง — ไม่มีส่วนเกี่ยวกับ isToday เลย
+                    border: s ? '1px solid rgba(37,99,235,0.20)' : '1px solid transparent',
+                    background: s ? 'rgba(37,99,235,0.12)' : 'transparent',
+                    color: s ? '#2563EB' : 'var(--text)',
+                  }}
+                  onMouseEnter={e=>{if(!s&&!dis)e.currentTarget.style.background='var(--row-head-bg)';}}
+                  onMouseLeave={e=>{if(!s&&!dis)e.currentTarget.style.background='transparent';}}
+                >
+                  {day}
+                  {/* วันนี้: แสดงเพียง dot เล็ก ๆ ข้างล่าง — ไม่ใช้ background เด็ดขาด */}
+                  {t && !s && (
+                    <span style={{
+                      position:'absolute', bottom:2, left:'50%', transform:'translateX(-50%)',
+                      width:3, height:3, borderRadius:'50%',
+                      background:'var(--text-tertiary)', display:'block',
+                    }}/>
+                  )}
+                </button>;
+              })}
+            </div>
+          </>)}
+          {pv==='month'&&(<>
+            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10}}>
+              <button style={nb} onClick={()=>setView(new Date(yr-1,mo,1))}>&#8249;</button>
+              <button style={hb()} onMouseEnter={e=>e.currentTarget.style.background='var(--row-head-bg)'} onMouseLeave={e=>e.currentTarget.style.background='none'} onClick={()=>setPv('year')}>{byr}</button>
+              <button style={nb} onClick={()=>setView(new Date(yr+1,mo,1))}>&#8250;</button>
+            </div>
+            <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:5}}>
+              {TH_MONTHS_S.map((m,i)=>{
+                // isSelM: เดือนที่ user เลือกจริงๆ จาก prop value เท่านั้น
+                // ต้องเช็คทั้ง month index และ year กับ view ปัจจุบัน
+                const isSelM = sel && sel.getMonth()===i && sel.getFullYear()===yr;
+                // ห้ามใช้ mo (viewMonth) เป็น selected state
+                return <button key={i}
+                  onClick={()=>{setView(new Date(yr,i,1));setPv('day');}}
+                  style={{
+                    padding:'9px 4px',borderRadius:7,cursor:'pointer',
+                    fontSize:12.5,fontWeight:isSelM?700:500,
+                    transition:'background .12s,border-color .12s,color .12s',
+                    border: isSelM ? '1px solid rgba(37,99,235,0.20)' : '1px solid transparent',
+                    background: isSelM ? 'rgba(37,99,235,0.12)' : 'transparent',
+                    color: isSelM ? '#2563EB' : 'var(--text)',
+                  }}
+                  onMouseEnter={e=>{
+                    if(!isSelM){e.currentTarget.style.background='var(--row-head-bg)';e.currentTarget.style.borderColor='var(--border-soft)';}
+                  }}
+                  onMouseLeave={e=>{
+                    if(!isSelM){e.currentTarget.style.background='transparent';e.currentTarget.style.borderColor='transparent';}
+                  }}>{m}</button>;
+              })}
+            </div>
+          </>)}
+          {pv==='year'&&(<>
+            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10}}>
+              <button style={nb} onClick={()=>setView(new Date(yr-12,mo,1))}>&#8249;</button>
+              <span style={{fontWeight:700,fontSize:13,color:'var(--text)'}}>{yrs[0]}–{yrs[yrs.length-1]}</span>
+              <button style={nb} onClick={()=>setView(new Date(yr+12,mo,1))}>&#8250;</button>
+            </div>
+            <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:5}}>
+              {yrs.map(by=>{
+                // isViewY: ปีที่ view กำลัง navigate อยู่ (subtle outline เพื่อ UX)
+                const isViewY = (by-543)===yr;
+                // isSelY: ปีของวันที่ที่ user เลือกจริงๆ จาก prop value
+                const isSelY = sel && (by-543)===sel.getFullYear();
+                return <button key={by} onClick={()=>{setView(new Date(by-543,mo,1));setPv('month');}}
+                  style={{
+                    padding:'9px 4px',borderRadius:7,cursor:'pointer',
+                    fontSize:12.5,transition:'background .12s',
+                    border: isSelY
+                      ? '1px solid rgba(37,99,235,0.20)'
+                      : isViewY ? '1px solid var(--border-soft)' : '1px solid transparent',
+                    background: isSelY ? 'rgba(37,99,235,0.12)' : 'transparent',
+                    color: isSelY ? '#2563EB' : 'var(--text)',
+                    fontWeight: isSelY ? 700 : isViewY ? 600 : 500,
+                  }}
+                  onMouseEnter={e=>{if(!isSelY)e.currentTarget.style.background='var(--row-head-bg)';}}
+                  onMouseLeave={e=>{if(!isSelY)e.currentTarget.style.background='transparent';}}>{by}</button>;
+              })}
+            </div>
+          </>)}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * formatTH — แปลง timestamp เป็นข้อความภาษาไทย (th-TH)
+ * แสดงวัน/เดือน/ปี เวลาแบบ 24 ชม. (ไม่ใช้ AM/PM)
+ * @param {string} ts - ISO timestamp string
+ * @returns {string} ข้อความวันที่ภาษาไทย เช่น "19 พ.ค. 2568 14:32:11"
+ */
+function formatTH(ts) {
+  try { return new Date(ts).toLocaleString('th-TH', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }) }
+  catch { return ts }
+}
+
+/**
+ * Logs — หน้าดู Security Event Logs ทั้งหมด (Search, Filter, Paginate, Export)
+ */
 export default function Logs() {
   const { t } = useApp()
   const navigate = useNavigate()
-  const [logs, setLogs] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [page, setPage] = useState(0)
-  const [selectedEvent, setSelectedEvent] = useState(null)
-  const [searchQuery, setSearchQuery] = useState('')
 
-  const [filters, setFilters] = useState({ model_name: '', attack_class: '', alerts_only: false })
-  const [sortField, setSortField] = useState('timestamp')
-  const [sortDir, setSortDir] = useState('desc')
+  // สมมติเริ่มต้นจาก MOCK_LOGS — ใน production ให้ดึงจาก API /api/logs แทน
+  const [logs] = useState(MOCK_LOGS)
+  const [loading] = useState(false)    // ใช้แสดง spinner เมื่อดึงข้อมูลจาก API
 
-  const PAGE_SIZE = 50
+  // ── Pagination ──
+  const [page, setPage] = useState(1) // หน้าปัจจุบัน (เริ่มที่ 1)
 
-  useEffect(() => { fetchLogs() }, [page, filters])
+  // ── Modal ──
+  const [selectedEvent, setSelectedEvent] = useState(null) // event ที่คลิกเปิด ThreatInspectModal
 
-  async function fetchLogs() {
-    setLoading(true)
-    try {
-      const params = new URLSearchParams({ limit: PAGE_SIZE.toString(), offset: (page * PAGE_SIZE).toString() })
-      if (filters.model_name) params.set('model_name', filters.model_name)
-      if (filters.attack_class) params.set('attack_class', filters.attack_class)
-      if (filters.alerts_only) params.set('alerts_only', 'true')
+  // ── Filter State — ตัวกรองทั้งหมดใช้ตรวจ logic ใน filtered array ───────────────
+  const [searchQuery,    setSearchQuery]    = useState('')  // ค้นหา: source_ip, attack_class, model, ref
+  const [modelFilter,    setModelFilter]    = useState('')  // โมเดล (Intrusion/Flow/Injection LSTM)
+  const [attackFilter,   setAttackFilter]   = useState('')  // ประเภทการโจมตี
+  const [severityFilter, setSeverityFilter] = useState('')  // ระดับความรุนแรง (CRITICAL/HIGH/MEDIUM/LOW)
+  const [statusFilter,   setStatusFilter]   = useState('')  // สถานะ (BLOCKED/INVESTIGATING/MITIGATED)
+  const [sourceIpFilter, setSourceIpFilter] = useState('')  // กรอง Source IP
+  const [targetFilter,   setTargetFilter]   = useState('')  // กรอง Target
+  const [dateFrom,       setDateFrom]       = useState('')  // วันที่เริ่มต้น (ISO string)
+  const [dateTo,         setDateTo]         = useState('')  // วันที่สิ้นสุด (ISO string)
 
-      const res = await fetch(`/api/logs?${params}`)
-      const data = await res.json()
-      if (data.ok) setLogs(data.data)
-    } catch (err) {
-      console.error('Failed to fetch logs:', err)
-    } finally {
-      setLoading(false)
-    }
-  }
+  const PAGE_SIZE = 10 // ❗ เปลี่ยนตรงนี้เพื่อปรับจำนวนรายการต่อหน้า
 
-  function handleSort(field) {
-    playSound('click')
-    if (sortField === field) setSortDir(sortDir === 'asc' ? 'desc' : 'asc')
-    else { setSortField(field); setSortDir('desc') }
-  }
-
-  function getFilteredAndSortedLogs() {
-    let result = [...logs]
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase().trim()
-      result = result.filter((item) =>
-        (item.source_ip && item.source_ip.toLowerCase().includes(q)) ||
-        (item.attack_class && item.attack_class.toLowerCase().includes(q)) ||
-        (item.model_name && item.model_name.toLowerCase().includes(q)) ||
-        (item.id && item.id.toString().includes(q))
-      )
-    }
-    return result.sort((a, b) => {
-      let aVal = a[sortField], bVal = b[sortField]
-      if (typeof aVal === 'string') aVal = aVal.toLowerCase()
-      if (typeof bVal === 'string') bVal = bVal.toLowerCase()
-      if (aVal < bVal) return sortDir === 'asc' ? -1 : 1
-      if (aVal > bVal) return sortDir === 'asc' ? 1 : -1
-      return 0
-    })
-  }
-
+  /**
+   * handleExportCSV — ส่งออก log ที่ filter แล้วเป็นไฟล์ .csv
+   * สร้าง Blob แล้ว trigger download ผ่าน anchor element ชั่วคราว
+   */
   function handleExportCSV() {
     playSound('click')
-    const sorted = getFilteredAndSortedLogs()
-    if (sorted.length === 0) return
-    const headers = ['id', 'model_name', 'attack_class', 'confidence', 'source_ip', 'timestamp', 'is_alert']
-    const csvRows = [headers.join(','), ...sorted.map((row) => headers.map((f) => JSON.stringify(row[f] ?? '')).join(','))].join('\n')
-    const blob = new Blob([csvRows], { type: 'text/csv;charset=utf-8;' })
+    const headers = ['id', 'ref', 'attack_class', 'source_ip', 'target', 'severity', 'status', 'model_name', 'confidence', 'timestamp']
+    const rows = [headers.join(','), ...filtered.map(r => headers.map(h => JSON.stringify(r[h] ?? '')).join(','))].join('\n')
+    const blob = new Blob([rows], { type: 'text/csv;charset=utf-8;' })
     const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.setAttribute('href', url)
-    link.setAttribute('download', `cybershield_logs_page_${page + 1}.csv`)
-    document.body.appendChild(link); link.click(); document.body.removeChild(link)
+    const a = document.createElement('a'); a.href = url; a.download = 'cybershield_logs.csv'
+    document.body.appendChild(a); a.click(); document.body.removeChild(a)
     playSound('success')
   }
 
+  /**
+   * handleExportJSON — ส่งออก log ที่ filter แล้วเป็นไฟล์ .json
+   * สร้าง data URI แล้ว trigger download ผ่าน anchor element
+   */
   function handleExportJSON() {
     playSound('click')
-    const sorted = getFilteredAndSortedLogs()
-    if (sorted.length === 0) return
-    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(sorted, null, 2))
-    const link = document.createElement('a')
-    link.setAttribute('href', dataStr)
-    link.setAttribute('download', `cybershield_logs_page_${page + 1}.json`)
-    document.body.appendChild(link); link.click(); document.body.removeChild(link)
+    const url = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(filtered, null, 2))
+    const a = document.createElement('a'); a.href = url; a.download = 'cybershield_logs.json'
+    document.body.appendChild(a); a.click(); document.body.removeChild(a)
     playSound('success')
   }
 
-  function getConfidenceClass(confidence) {
-    if (confidence >= 0.85) return 'confidence-high'
-    if (confidence >= 0.6) return 'confidence-medium'
-    return 'confidence-low'
-  }
-
-  function formatTime(timestamp) {
-    try { return new Date(timestamp).toLocaleString('th-TH', { hour12: false }) } catch { return timestamp }
-  }
-
-  function clearLogFilters() {
+  /**
+   * clearFilters — รีเซ็ต filter ทั้งหมดและกลับไปหน้า 1
+   */
+  function clearFilters() {
     playSound('click')
-    setSearchQuery('')
-    setFilters({ model_name: '', attack_class: '', alerts_only: false })
-    setPage(0)
+    setSearchQuery(''); setModelFilter(''); setAttackFilter('')
+    setSeverityFilter(''); setStatusFilter(''); setSourceIpFilter(''); setTargetFilter('')
+    setDateFrom(''); setDateTo('')
+    setPage(1) // reset pagination
   }
 
-  function severityClass(confidence) {
-    if (confidence >= 0.85) return 'tag-danger'
-    if (confidence >= 0.6) return 'tag-warning'
-    return 'tag-neutral'
-  }
+  // ── Logic กรองข้อมูล ───────────────────────────────────────────────────────────────
+  // filtered: logs ที่ผ่าน filter ทั้งหมด — ใช้ทำ pagination และ export
+  const filtered = logs.filter(l => {
+    const q = searchQuery.toLowerCase()
+    // matchQ: ตรงกับ search query ใน source_ip, attack_class, model_name หรือ ref
+    const matchQ      = !q || [l.source_ip, l.attack_class, l.model_name, l.ref].some(v => v?.toLowerCase().includes(q))
+    const matchModel  = !modelFilter   || l.model_name?.toLowerCase().includes(modelFilter)
+    const matchAttack = !attackFilter  || l.attack_class === attackFilter
+    const matchSev    = !severityFilter|| l.sevKey === severityFilter
+    const matchStatus = !statusFilter  || l.statusKey === statusFilter
+    const matchSrc    = !sourceIpFilter|| l.source_ip?.includes(sourceIpFilter)
+    const matchTgt    = !targetFilter  || l.target?.includes(targetFilter)
+    // matchFrom/matchTo: ตรวจการเปรียบเทียบสตริง ISO โดยตรง (ใช้ได้เพราะ ISO format เรียง lexicographically)
+    const matchFrom   = !dateFrom      || l.timestamp >= dateFrom
+    const matchTo     = !dateTo        || l.timestamp.slice(0,10) <= dateTo
+    return matchQ && matchModel && matchAttack && matchSev && matchStatus && matchSrc && matchTgt && matchFrom && matchTo
+  })
 
-  const sortIndicator = (field) => sortField !== field ? '' : (sortDir === 'asc' ? ' ↑' : ' ↓')
-  const displayLogs = getFilteredAndSortedLogs()
+  // คำนวณ pagination: จำนวนหน้าทั้งหมด และ logs ในหน้าปัจจุบัน
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
+  const paginated  = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-6)' }}>
+      {/* ── Header ── */}
       <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 16 }}>
-        <div>
-          <h2>{t.logs.title}</h2>
-          <p className="text-muted">{t.logs.subtitle}</p>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+          <div style={{ width: 40, height: 40, borderRadius: 12, background: 'rgba(99,102,241,.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--accent)' }}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+          </div>
+          <div>
+            <h2 style={{ margin: 0 }}>บันทึกเหตุการณ์</h2>
+            <p className="text-muted" style={{ margin: 0, marginTop: 3, fontSize: 13 }}>ค้นหา ดู และส่งออกบันทึกเหตุการณ์ทั้งหมด</p>
+          </div>
         </div>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <button className="btn btn-secondary" onClick={handleExportCSV} disabled={displayLogs.length === 0}>{t.logs.exportCsv}</button>
-          <button className="btn btn-secondary" onClick={handleExportJSON} disabled={displayLogs.length === 0}>{t.logs.exportJson}</button>
-          <button className="btn btn-primary" onClick={() => { playSound('click'); fetchLogs(); }}>{t.logs.refresh}</button>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          <button className="btn btn-outline" onClick={handleExportCSV} disabled={filtered.length === 0} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+            ส่งออก CSV
+          </button>
+          <button className="btn btn-outline" onClick={handleExportJSON} disabled={filtered.length === 0} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>
+            ส่งออก JSON
+          </button>
+          <button className="btn btn-primary" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+            รีเฟรช
+          </button>
         </div>
       </div>
 
-      <div className="logs-filters-grid">
-        <input className="input" placeholder={t.logs.searchPh} value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
-        <select className="input" value={filters.model_name} onChange={(e) => { playSound('click'); setFilters({ ...filters, model_name: e.target.value }); setPage(0) }}>
-          <option value="">{t.logs.modelFilterAll}</option>
-          <option value="intrusion">Intrusion (NSL-KDD)</option>
-          <option value="flow">Flow (CSE-CIC-IDS2018)</option>
-          <option value="sqli">Injection (SQLi)</option>
-        </select>
-        <select className="input" value={filters.attack_class} onChange={(e) => { playSound('click'); setFilters({ ...filters, attack_class: e.target.value }); setPage(0) }}>
-          <option value="">{t.logs.classFilterAll}</option>
-          <option value="Normal">Normal / BENIGN</option>
-          <option value="R2L">R2L</option>
-          <option value="U2R">U2R</option>
-          <option value="DDoS">DDoS</option>
-          <option value="DoS">DoS</option>
-          <option value="BruteForce">BruteForce</option>
-          <option value="SQL Injection">SQL Injection</option>
-        </select>
-      </div>
+      {/* ── Filters Card ── */}
+      <div className="card elev-sm" style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+        {/* Search Bar */}
+        <div style={{ position: 'relative' }}>
+          <svg style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-tertiary)', pointerEvents: 'none' }} width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+          <input value={searchQuery} onChange={e => setSearchQuery(e.target.value)} placeholder="ค้นหา IP, ประเภทการโจมตี หรือรหัสอ้างอิง..."
+            style={{ width: '100%', padding: '11px 16px 11px 42px', border: '1px solid var(--border-soft)', borderRadius: 10, background: 'var(--row-head-bg)', color: 'var(--text)', fontSize: 13.5, outline: 'none', boxSizing: 'border-box' }} />
+        </div>
 
-      <div className="card elev-sm" style={{ padding: 0, overflow: 'hidden' }}>
-        {loading ? (
-          <div className="loading-spinner"><div className="spinner"></div></div>
-        ) : displayLogs.length === 0 ? (
-          <div className="empty-state" style={{ padding: 'var(--space-8) 0' }}>
-            <svg className="empty-icon" width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="5" y="3" width="14" height="18"></rect><line x1="8" y1="8" x2="16" y2="8"></line><line x1="8" y1="12" x2="16" y2="12"></line></svg>
-            <div style={{ fontSize: 14 }}>{t.logs.emptyTitle}</div>
-            <div className="text-muted" style={{ fontSize: 12 }}>{t.logs.emptySub}</div>
-            <div style={{ display: 'flex', gap: 10, marginTop: 18, flexWrap: 'wrap', justifyContent: 'center' }}>
-              <button className="btn btn-secondary" onClick={clearLogFilters}>{t.logs.clearFilters}</button>
-              <button className="btn btn-secondary" onClick={() => { playSound('click'); fetchLogs() }}>{t.logs.refresh}</button>
-              <button className="btn btn-primary" onClick={() => { playSound('click'); navigate('/test') }}>{t.logs.goToManualTest}</button>
+        {/* Row 1 */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <label style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--text-tertiary)' }}>โหมดทั้งหมด</label>
+            <select value={modelFilter} onChange={e => { setModelFilter(e.target.value); setPage(1) }}
+              style={{ padding: '9px 12px', border: '1px solid var(--border-soft)', borderRadius: 8, background: 'var(--row-head-bg)', color: 'var(--text)', fontSize: 13, cursor: 'pointer' }}>
+              <option value="">โหมดทั้งหมด</option>
+              <option value="intrusion">Intrusion LSTM (NSL-KDD)</option>
+              <option value="flow">Flow LSTM (CSE-CIC-IDS2018)</option>
+              <option value="injection">Injection LSTM (SQLi)</option>
+            </select>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <label style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--text-tertiary)', display: 'flex', alignItems: 'center', gap: 5 }}>ประเภทการโจมตีทั้งหมด <InfoHelp id="attackType" /></label>
+            <select value={attackFilter} onChange={e => { setAttackFilter(e.target.value); setPage(1) }}
+              style={{ padding: '9px 12px', border: '1px solid var(--border-soft)', borderRadius: 8, background: 'var(--row-head-bg)', color: 'var(--text)', fontSize: 13, cursor: 'pointer' }}>
+              <option value="">ประเภทการโจมตีทั้งหมด</option>
+              <option value="SQL Injection">SQL Injection</option>
+              <option value="Brute Force">Brute Force</option>
+              <option value="DDoS">DDoS</option>
+              <option value="DoS">DoS</option>
+              <option value="Port Scan">Port Scan</option>
+              <option value="R2L">R2L</option>
+              <option value="U2R">U2R</option>
+              <option value="Suspicious Activity">Suspicious Activity</option>
+            </select>
+          </div>
+        </div>
+
+        {/* Row 2 */}
+        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 12 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <label style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--text-tertiary)' }}>ช่วงเวลา</label>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <ThaiDP value={dateFrom} onChange={v => {
+                setDateFrom(v);
+                if (v && !dateTo) {
+                  const today = new Date().toISOString().slice(0, 10);
+                  setDateTo(today);
+                }
+                setPage(1);
+              }} placeholder="วันเริ่มต้น…" />
+              <span style={{ color: 'var(--text-tertiary)', fontWeight: 500, fontSize: 13, flexShrink: 0 }}>–</span>
+              <ThaiDP value={dateTo} onChange={v => { setDateTo(v); setPage(1); }} placeholder="วันสิ้นสุด…" minDate={dateFrom} />
             </div>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <label style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--text-tertiary)' }}>ความรุนแรง</label>
+            <select value={severityFilter} onChange={e => { setSeverityFilter(e.target.value); setPage(1) }}
+              style={{ padding: '9px 12px', border: '1px solid var(--border-soft)', borderRadius: 8, background: 'var(--row-head-bg)', color: 'var(--text)', fontSize: 13, cursor: 'pointer' }}>
+              <option value="">ทั้งหมด</option>
+              <option value="CRITICAL">วิกฤต</option>
+              <option value="HIGH">สูง</option>
+              <option value="MEDIUM">ปานกลาง</option>
+              <option value="LOW">ต่ำ</option>
+            </select>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <label style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--text-tertiary)' }}>สถานะ</label>
+            <select value={statusFilter} onChange={e => { setStatusFilter(e.target.value); setPage(1) }}
+              style={{ padding: '9px 12px', border: '1px solid var(--border-soft)', borderRadius: 8, background: 'var(--row-head-bg)', color: 'var(--text)', fontSize: 13, cursor: 'pointer' }}>
+              <option value="">ทั้งหมด</option>
+              <option value="BLOCKED">บล็อกแล้ว</option>
+              <option value="INVESTIGATING">กำลังตรวจสอบ</option>
+              <option value="MITIGATED">แก้ไขแล้ว</option>
+              <option value="OPEN">เปิดอยู่</option>
+            </select>
+          </div>
+        </div>
+
+        {/* Row 3 */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <label style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--text-tertiary)' }}>แหล่งที่มา</label>
+            <input value={sourceIpFilter} onChange={e => { setSourceIpFilter(e.target.value); setPage(1) }} placeholder="ระบุ IP Address"
+              style={{ padding: '9px 12px', border: '1px solid var(--border-soft)', borderRadius: 8, background: 'var(--row-head-bg)', color: 'var(--text)', fontSize: 13, outline: 'none' }} />
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <label style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--text-tertiary)' }}>เป้าหมาย</label>
+            <input value={targetFilter} onChange={e => { setTargetFilter(e.target.value); setPage(1) }} placeholder="ระบุ IP Address"
+              style={{ padding: '9px 12px', border: '1px solid var(--border-soft)', borderRadius: 8, background: 'var(--row-head-bg)', color: 'var(--text)', fontSize: 13, outline: 'none' }} />
+          </div>
+        </div>
+
+        {/* Actions */}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+          <button onClick={clearFilters} style={{ padding: '9px 18px', borderRadius: 9, border: '1px solid var(--border-soft)', background: 'transparent', color: 'var(--text-secondary)', fontSize: 13, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+            ล้างตัวกรอง
+          </button>
+          <button className="btn btn-primary" onClick={() => setPage(1)} style={{ padding: '9px 24px', display: 'flex', alignItems: 'center', gap: 6 }}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+            ค้นหา
+          </button>
+        </div>
+      </div>
+
+      {/* ── Results Table ── */}
+      <div className="card elev-sm" style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div style={{ fontSize: 14.5, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 10 }}>
+          ผลการค้นหา
+          <span style={{ background: 'var(--accent)', color: '#fff', fontSize: 12, fontWeight: 700, padding: '2px 10px', borderRadius: 999 }}>{filtered.length} รายการ</span>
+        </div>
+
+        {loading ? (
+          <div style={{ display: 'flex', justifyContent: 'center', padding: 40 }}><div className="spinner"></div></div>
+        ) : filtered.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--text-tertiary)', fontSize: 14 }}>
+            <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" style={{ marginBottom: 12, opacity: .4 }}><rect x="5" y="3" width="14" height="18" rx="1"></rect><line x1="8" y1="8" x2="16" y2="8"></line><line x1="8" y1="12" x2="16" y2="12"></line><line x1="8" y1="16" x2="11" y2="16"></line></svg>
+            <div>ไม่พบข้อมูล</div>
+            <button onClick={clearFilters} style={{ marginTop: 14, padding: '8px 18px', borderRadius: 8, border: '1px solid var(--border-soft)', background: 'transparent', cursor: 'pointer', color: 'var(--text-secondary)', fontSize: 13 }}>ล้างตัวกรอง</button>
           </div>
         ) : (
           <>
             <div style={{ overflowX: 'auto' }}>
-              <table className="table">
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                 <thead>
-                  <tr>
-                    <th data-sortable onClick={() => handleSort('timestamp')}>{t.logs.colTimestamp}{sortIndicator('timestamp')}</th>
-                    <th data-sortable onClick={() => handleSort('id')}>{t.logs.colRef} <InfoHelp id="refId" />{sortIndicator('id')}</th>
-                    <th data-sortable onClick={() => handleSort('source_ip')}>{t.logs.colSource} <InfoHelp id="sourceIp" />{sortIndicator('source_ip')}</th>
-                    <th data-sortable onClick={() => handleSort('attack_class')}>{t.logs.colAttack}{sortIndicator('attack_class')}</th>
-                    <th data-sortable onClick={() => handleSort('model_name')}>{t.logs.colModel}{sortIndicator('model_name')}</th>
-                    <th data-sortable onClick={() => handleSort('confidence')}>{t.logs.colSeverity}{sortIndicator('confidence')}</th>
-                    <th style={{ textAlign: 'center' }}>{t.logs.colStatus}</th>
+                  <tr style={{ borderBottom: '2px solid var(--border-soft)' }}>
+                    {['เวลา', 'รหัสอ้างอิง', 'ประเภทการโจมตี', 'แหล่งที่มา', 'เป้าหมาย', 'ความรุนแรง', 'สถานะ'].map(h => (
+                      <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11.5, fontWeight: 600, color: 'var(--text-tertiary)', whiteSpace: 'nowrap' }}>{h}</th>
+                    ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {displayLogs.map((log) => (
-                    <tr key={log.id} className={log.is_alert ? 'alert-row' : ''} style={{ cursor: 'pointer' }} onClick={() => { playSound('click'); setSelectedEvent(log) }}>
-                      <td className="mono" style={{ fontSize: 12 }}>{formatTime(log.timestamp)}</td>
-                      <td className="mono">#{log.id}</td>
-                      <td className="mono">{log.source_ip}</td>
-                      <td style={{ fontWeight: 600 }}>{log.attack_class}</td>
-                      <td><span className={`event-model-badge ${log.model_name}`}>{log.model_name}</span></td>
-                      <td><span className={`tag ${severityClass(log.confidence)} mono`}>{(log.confidence * 100).toFixed(1)}%</span></td>
-                      <td style={{ textAlign: 'center' }}>
-                        {log.is_alert ? <span className="tag tag-danger">!</span> : <span className="tag tag-accent">OK</span>}
-                      </td>
-                    </tr>
-                  ))}
+                  {paginated.map((log, i) => {
+                    const sev = SEV_CONFIG[log.sevKey] || SEV_CONFIG.LOW
+                    const st = STATUS_CONFIG[log.statusKey] || STATUS_CONFIG.OPEN
+                    const atk = ATTACK_PILL[log.attack_class] || { bg: 'var(--row-head-bg)', color: 'var(--text-secondary)' }
+                    return (
+                      <tr key={log.id} style={{ borderBottom: '1px solid var(--border-soft)', cursor: 'pointer', transition: 'background .15s' }}
+                        onMouseEnter={e => e.currentTarget.style.background = 'var(--row-head-bg)'}
+                        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                        onClick={() => { playSound('click'); setSelectedEvent(log) }}>
+                        <td style={{ padding: '14px 14px', verticalAlign: 'top' }}>
+                          <div style={{ fontSize: 12.5, fontWeight: 600 }}>{formatTH(log.timestamp).split(' ').slice(0,2).join(' ')}</div>
+                          <div style={{ fontSize: 12.5, fontWeight: 700, marginTop: 1 }}>{formatTH(log.timestamp).split(' ')[2]}</div>
+                        </td>
+                        <td style={{ padding: '14px 14px', verticalAlign: 'middle' }}>
+                          <span className="mono" style={{ fontSize: 12.5, fontWeight: 600 }}>{log.ref}</span>
+                        </td>
+                        <td style={{ padding: '14px 14px', verticalAlign: 'middle' }}>
+                          <span style={{ background: atk.bg, color: atk.color, fontSize: 12.5, fontWeight: 700, padding: '5px 12px', borderRadius: 999 }}>{log.attack_class}</span>
+                        </td>
+                        <td style={{ padding: '14px 14px', verticalAlign: 'middle' }}>
+                          <span className="mono" style={{ fontSize: 12.5 }}>{log.source_ip}</span>
+                        </td>
+                        <td style={{ padding: '14px 14px', verticalAlign: 'middle' }}>
+                          <span style={{ fontSize: 12.5 }}>{log.target}</span>
+                        </td>
+                        <td style={{ padding: '14px 14px', verticalAlign: 'middle' }}>
+                          <span style={{ background: sev.bg, color: sev.color, fontSize: 12, fontWeight: 700, padding: '5px 12px', borderRadius: 999, display: 'flex', alignItems: 'center', gap: 6, width: 'fit-content' }}>
+                            <span style={{ width: 6, height: 6, borderRadius: 999, background: sev.color, display: 'inline-block', flexShrink: 0 }} />
+                            {sev.label}
+                          </span>
+                        </td>
+                        <td style={{ padding: '14px 14px', verticalAlign: 'middle' }}>
+                          <span style={{ background: st.bg, color: st.color, fontSize: 12, fontWeight: 600, padding: '5px 12px', borderRadius: 999 }}>{st.label}</span>
+                        </td>
+                      </tr>
+                    )
+                  })}
                 </tbody>
               </table>
             </div>
 
-            <div className="pagination">
-              <button className="btn btn-secondary" onClick={() => { playSound('click'); setPage(Math.max(0, page - 1)) }} disabled={page === 0}>{t.logs.prevPage}</button>
-              <span className="mono text-muted">{t.logs.pageLabel} {page + 1}</span>
-              <button className="btn btn-secondary" onClick={() => { playSound('click'); setPage(page + 1) }} disabled={logs.length < PAGE_SIZE}>{t.logs.nextPage}</button>
+            {/* Pagination */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, color: 'var(--text-secondary)' }}>
+                <span>แสดง</span>
+                <select value={PAGE_SIZE} style={{ padding: '5px 10px', border: '1px solid var(--border-soft)', borderRadius: 6, background: 'var(--row-head-bg)', color: 'var(--text)', fontSize: 13 }}>
+                  <option>10</option><option>25</option><option>50</option>
+                </select>
+                <span>รายการต่อหน้า</span>
+              </div>
+              <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                {/* ← Prev */}
+                <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}
+                  style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid var(--border-soft)', background: 'transparent',
+                    cursor: page === 1 ? 'not-allowed' : 'pointer', opacity: page === 1 ? .35 : 1, color: 'var(--text)' }}>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6"/></svg>
+                </button>
+
+                {/* Page numbers — windowed: first, ...left-gap..., cur±2, ...right-gap..., last */}
+                {(() => {
+                  const delta = 2;
+                  const range = [];
+                  const rangeWithDots = [];
+                  let l;
+                  for (let i = 1; i <= totalPages; i++) {
+                    if (i === 1 || i === totalPages || (i >= page - delta && i <= page + delta)) {
+                      range.push(i);
+                    }
+                  }
+                  for (const i of range) {
+                    if (l) {
+                      if (i - l === 2) rangeWithDots.push(l + 1);
+                      else if (i - l > 2) rangeWithDots.push('…');
+                    }
+                    rangeWithDots.push(i);
+                    l = i;
+                  }
+                  return rangeWithDots.map((item, idx) =>
+                    item === '…'
+                      ? <span key={'dot' + idx} style={{ padding: '0 4px', color: 'var(--text-tertiary)', fontSize: 13 }}>…</span>
+                      : <button key={item} onClick={() => setPage(item)}
+                          style={{ minWidth: 34, padding: '6px 8px', borderRadius: 8,
+                            border: `1px solid ${page === item ? 'var(--accent)' : 'var(--border-soft)'}`,
+                            fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                            background: page === item ? 'var(--accent)' : 'transparent',
+                            color: page === item ? '#fff' : 'var(--text)',
+                            transition: 'background .12s, border-color .12s',
+                          }}>
+                          {item}
+                        </button>
+                  );
+                })()}
+
+                {/* → Next */}
+                <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}
+                  style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid var(--border-soft)', background: 'transparent',
+                    cursor: page === totalPages ? 'not-allowed' : 'pointer', opacity: page === totalPages ? .35 : 1, color: 'var(--text)' }}>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 18 15 12 9 6"/></svg>
+                </button>
+              </div>
             </div>
           </>
         )}

@@ -122,7 +122,7 @@ def post_event(model_name: str, attack_class: str, confidence: float, source_ip:
             timeout=2,
         )
     except requests.RequestException as e:
-        print(f"⚠️ Failed to post event: {e}")
+        print(f"⚠️ ไม่สามารถส่ง event ไป FastAPI: {e}")
 
 
 def main():
@@ -137,10 +137,10 @@ def main():
     for flow in streamer:
         src_ip = flow.src_ip
 
-        # Chronological windows only — no per-source-IP grouping (CLAUDE.md).
-        # Skip prediction until WINDOW_SIZE real flows have accumulated:
-        # training dropped incomplete (padded) windows, so the model has
-        # never seen a padded input and serving must not synthesize one.
+        # เรียงตามเวลาล้วน — ไม่ group ตาม source IP (ดู CLAUDE.md)
+        # ไม่ predict จนกว่าจะสะสมครบ WINDOW_SIZE flows จริงๆ
+        # เพราะ training data ทิ้ง window ที่ไม่ครบ — โมเดลไม่เคยเห็น padding จริง
+        # ดังนั้นฝั่ง serving ต้องไม่สร้าง padding ขึ้นมาเอง
         nsl_window.append(extract_nslkdd_features(flow))
         cic_window.append(extract_csecicids2018_features(flow))
 

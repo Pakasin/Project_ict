@@ -14,7 +14,7 @@ async def require_login(request: Request) -> str:
     """FastAPI dependency — ตรวจสอบว่า user login แล้วหรือยัง"""
     username = request.session.get("username")
     if not username:
-        raise HTTPException(status_code=401, detail="Not authenticated")
+        raise HTTPException(status_code=401, detail="ยังไม่ได้ยืนยันตัวตน")
     return username
 
 
@@ -26,7 +26,7 @@ async def require_admin(request: Request) -> str:
     localStorage) จะถูกปฏิเสธที่นี่โดยธรรมชาติ"""
     username = request.session.get("username")
     if not username:
-        raise HTTPException(status_code=401, detail="Admin authentication required")
+        raise HTTPException(status_code=401, detail="ต้องการสิทธิ์ Admin ในการดำเนินการ")
     return username
 
 
