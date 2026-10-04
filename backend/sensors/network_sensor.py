@@ -58,7 +58,8 @@ THRESHOLD_FLOW = float(os.getenv("THRESHOLD_FLOW", "0.80"))
 
 # ===== โหลด Models + Scalers =====
 print("📡 Loading models and scalers...")
-model_intrusion = tf.keras.models.load_model(os.path.join(MODELS_DIR, "best_nslkdd_smote.keras"))
+# SimpleRNN (dir-format export) — ตรงกับ backend/main.py; best_nslkdd_smote.keras (LSTM+SMOTE) เก็บไว้เทียบเท่านั้น
+model_intrusion = tf.keras.models.load_model(os.path.join(MODELS_DIR, "best_nslkdd_SimpleRNN"))
 model_flow = tf.keras.models.load_model(os.path.join(MODELS_DIR, "best_flow_v2.keras"))
 scaler_intrusion = joblib.load(os.path.join(MODELS_DIR, "scaler_nslkdd.pkl"))
 _artifacts = load_model_artifacts()
