@@ -13,11 +13,12 @@ CyberShield — Shared Inference Logic (Logic การทำนายร่ว�
 ║     Process: scale(41) → reshape(1,10,41) → LSTM → softmax    ║
 ║     Output : 3 classes: Normal | R2L | U2R                     ║
 ║                                                               ║
-║  2. Flow Model (CSE-CIC-IDS2018)                              ║
-║     Input  : 78 raw features × 10 flows (window)              ║
-║     Process: scale(78) → slice(71) → reshape(1,10,71) → GRU   ║
-║     ⚠️  ต้อง scale ก่อน slice เสมอ — สลับไม่ได้               ║
+║  2. Flow Model v2 (CSE-CIC-IDS2018 improved)                  ║
+║     Input  : 52 features × 10 flows ของ source IP เดียวกัน     ║
+║     Process: engineer → scale(52) → clip ±6 → LSTM → softmax  ║
+║     Window : ต่อ source IP (ไม่ pad) — ดู backend/flow_features.py ║
 ║     Output : 4 classes: BENIGN | DoS | DDoS | BruteForce      ║
+║     ⚠️  รู้จักเครื่องมือโจมตีที่เคยเห็น เครื่องมือใหม่ไม่น่าเชื่อถือ ║
 ║                                                               ║
 ║  3. Injection Model / SQLi (char-level LSTM)                  ║
 ║     Input  : raw text (query string / request body)           ║
@@ -30,6 +31,14 @@ import json           # อ่านไฟล์ metadata JSON (feature list, cl
 from pathlib import Path  # จัดการ path แบบ cross-platform ไม่ต้องต่อ string เอง
 
 import numpy as np   # คำนวณ array/matrix สำหรับเตรียม tensor ก่อนส่งเข้าโมเดล
+
+from backend.flow_features import (  # นิยาม feature ของ Flow Model v2 (ใช้ร่วมกับ sensor)
+    FEATURE_NAMES as FLOW_FEATURE_NAMES,
+    PRIM_COLS as FLOW_PRIM_COLS,
+    engineer as flow_engineer,
+    load_scaler as load_flow_scaler,
+    scale_window as flow_scale_window,
+)
 
 # ── Path ไปยังโฟลเดอร์ที่เก็บไฟล์โมเดลทั้งหมด ──
 # Path(__file__).parent = โฟลเดอร์ที่ไฟล์นี้อยู่ (backend/)
@@ -61,9 +70,10 @@ def load_model_artifacts() -> dict:
     dict ที่มี keys ดังนี้:
         model_metadata   : input shapes + class labels ของ Intrusion และ Flow model
         sqli_metadata    : vocab size, max_len, threshold ของ SQLi model
-        raw_cols         : list ชื่อ 78 features ของ Flow model (ตามลำดับ scaler)
-        trained_cols     : list ชื่อ 71 features ที่ Flow model ใช้จริง
-        flow_keep_idx    : list[int] — index ของ 71 cols ใน 78 cols สำหรับ numpy slice
+        flow_meta        : metadata ของ Flow Model v2 (config, evaluation, limitations)
+        flow_scaler      : (mean, scale) ของ 52 features
+        flow_prim_cols   : list ชื่อ 43 primitive features (input ของ /api/predict)
+        flow_feature_names: list ชื่อ 52 features หลัง engineer
         flow_classes     : list ชื่อ 4 output classes ของ Flow model
         sqli_word_index  : dict { ตัวอักษร → int } สำหรับ encode text เป็น token
     """
@@ -76,15 +86,17 @@ def load_model_artifacts() -> dict:
     with open(MODELS_DIR / "sqli_model_metadata.json", encoding="utf-8") as f:
         sqli_metadata = json.load(f)
 
-    # อ่านชื่อ 78 raw features ของ Flow model
-    # ⚠️ ลำดับต้องตรงกับ scaler_csecicids2018.pkl ที่ fit ไว้ — ห้ามเรียงใหม่
-    with open(MODELS_DIR / "feature_cols.json", encoding="utf-8") as f:
-        raw_cols = json.load(f)
+    # Flow Model v2: metadata + scaler (JSON mean/scale — ไม่พึ่ง pickle ของ sklearn)
+    with open(MODELS_DIR / "flow_v2_metadata.json", encoding="utf-8") as f:
+        flow_meta = json.load(f)
+    flow_scaler = load_flow_scaler(MODELS_DIR / "flow_v2_scaler.json")  # (mean, scale)
 
-    # อ่านชื่อ 71 features ที่ Flow GRU ใช้จริง (subset ของ raw_cols)
-    # ไฟล์นี้บันทึกไว้ตอนเทรน ต้องใช้ตัวนี้ slice ตามเสมอ
-    with open(MODELS_DIR / "trained_feature_cols.json", encoding="utf-8") as f:
-        trained_cols = json.load(f)
+    # Schema guard: ถ้า artifact ไม่ตรงกับ flow_features.py ให้ fail ตอน startup
+    # ดีกว่าทำนายผิดเงียบๆ (ลำดับ feature สำคัญ — model รับ array ไม่ใช่ dict)
+    if list(flow_meta["prim_cols"]) != FLOW_PRIM_COLS or list(flow_meta["feature_names"]) != FLOW_FEATURE_NAMES:
+        raise ValueError("flow_v2_metadata.json feature schema ไม่ตรงกับ backend/flow_features.py")
+    if len(flow_scaler[0]) != len(FLOW_FEATURE_NAMES) or len(flow_scaler[1]) != len(FLOW_FEATURE_NAMES):
+        raise ValueError("flow_v2_scaler.json จำนวน feature ไม่ตรงกับ backend/flow_features.py")
 
     # อ่าน char-level word index ของ SQLi tokenizer
     # รูปแบบ: {"a": 2, "b": 3, ...} — index 0 = padding, index 1 = OOV
@@ -92,24 +104,18 @@ def load_model_artifacts() -> dict:
     with open(MODELS_DIR / "sqli_tokenizer.json", encoding="utf-8") as f:
         sqli_word_index = json.load(f)
 
-    # สร้าง list ของ index ตำแหน่งที่ต้อง slice จาก 78 cols เหลือ 71 cols
-    # วิธี: หาตำแหน่ง (index) ของแต่ละ trained col ใน raw_cols
-    # ตัวอย่าง: ถ้า raw_cols[5] = "Flow Duration" และ trained_cols ต้องการ "Flow Duration"
-    #           → flow_keep_idx มี 5 → scaled[:, flow_keep_idx] ดึง col ที่ 5 มาได้
-    flow_keep_idx = [raw_cols.index(c) for c in trained_cols]
-
-    # ดึงชื่อ class ทั้ง 4 ของ Flow model จาก metadata
-    # ตัวอย่าง: ["BENIGN", "DoS attacks-GoldenEye", "DDoS attacks-LOIC-HTTP", "Brute Force"]
-    flow_classes = model_metadata["flow_model"]["class_labels"]
+    # ชื่อ class ทั้ง 4 ของ Flow model — ลำดับตรงกับ output layer
+    flow_classes = flow_meta["classes"]
 
     # ส่งคืนทุกอย่างเป็น dict เดียว — main.py แยกเก็บใน app.state.*
     return {
         "model_metadata":  model_metadata,
         "sqli_metadata":   sqli_metadata,
-        "raw_cols":        raw_cols,
-        "trained_cols":    trained_cols,
-        "flow_keep_idx":   flow_keep_idx,   # ใช้ slice numpy: scaled[:, flow_keep_idx]
+        "flow_meta":       flow_meta,
+        "flow_scaler":     flow_scaler,                 # (mean, scale) float32
         "flow_classes":    flow_classes,
+        "flow_prim_cols":  FLOW_PRIM_COLS,              # 43 primitives ที่ nfstream ให้ได้
+        "flow_feature_names": FLOW_FEATURE_NAMES,       # 52 features ที่ model รับ
         "sqli_word_index": sqli_word_index,
     }
 
@@ -152,44 +158,30 @@ def predict_intrusion_window(
 
 
 def predict_flow_window(
-    model,                          # tf.keras.Model — Flow GRU โหลดไว้ใน app.state
-    scaler,                         # sklearn StandardScaler — fit บน CIC-IDS2018 (78 cols)
-    flow_keep_idx: list[int],       # index ของ 71 cols ที่ต้องการใน 78 cols
+    model,                          # tf.keras.Model — Flow Model v2 โหลดไว้ใน app.state
+    flow_scaler,                    # (mean, scale) จาก flow_v2_scaler.json
     flow_classes: list[str],        # ชื่อ 4 class (BENIGN, DoS, DDoS, BruteForce)
-    window_rows: list[list[float]], # 10 flows × 78 raw features เรียงตามเวลา
+    window,                         # (10, 52) engineered ยังไม่ scale — 10 flow ของ source IP เดียวกัน
 ) -> tuple[str, float, dict[str, float]]:
-    """ทำนาย Flow attack ด้วย window 10 flows จริง (สำหรับ Live Sensor)
+    """ทำนาย Flow attack ด้วย window 10 flows จริงของ source เดียวกัน (Live Sensor)
 
-    ⚠️ กฎสำคัญ: scale ก่อน → slice หลัง (ห้ามสลับลำดับ)
-       เหตุผล: scaler fit บน 78 cols ถ้า slice ก่อนจะ scale ผิดคอลัมน์
-               ค่า mean/std จะตกคนละ column ทำให้ผลลัพธ์ผิดโดยไม่มี error
+    window มาจาก SourceWindowTracker.push() (backend/flow_features.py) ซึ่งทำ engineer
+    + พฤติกรรม source (gap, dst เดิม) แล้ว ที่นี่ทำแค่ scale → clip → predict
+    ห้ามส่ง window ที่สั้นกว่า 10 / pad ศูนย์ — โมเดลไม่เคยเห็น padding
 
     Returns: (class_name, confidence, all_probs)
     """
-    # แปลง list of lists → numpy array รูปร่าง (10, 78)
-    rows = np.array(window_rows)  # shape: (10, 78)
-
-    # Step 1: Scale ด้วย 78-column StandardScaler
-    # ผลลัพธ์ยังคง 78 cols — scaler ต้องเห็น 78 cols ครบ
-    scaled = scaler.transform(rows)  # shape: (10, 78)
-
-    # Step 2: Slice เหลือ 71 cols ที่โมเดลใช้จริง
-    # flow_keep_idx คือ list index เช่น [0, 2, 5, 7, ...] (71 ตัว)
-    # numpy fancy indexing: ดึงเฉพาะ columns ที่ต้องการในครั้งเดียว
-    sliced = scaled[:, flow_keep_idx]  # shape: (10, 71)
-
-    # reshape เป็น (1, 10, 71) = [batch=1, timestep=10, features=71]
-    window = sliced.reshape(1, sliced.shape[0], sliced.shape[1])
-
-    # ส่ง tensor (1, 10, 71) เข้าโมเดล → softmax probability ของ 4 class
-    probs = model.predict(window, verbose=0)[0]  # shape: (4,)
-
-    idx = int(np.argmax(probs))  # index ของ class ที่ confidence สูงสุด
-
+    window = np.asarray(window, dtype=np.float32)
+    if window.shape != (10, len(FLOW_FEATURE_NAMES)):
+        raise ValueError(f"Flow window ต้องเป็น (10, {len(FLOW_FEATURE_NAMES)}) แต่ได้ {window.shape}")
+    mean, scale = flow_scaler
+    x = flow_scale_window(window, mean, scale)  # (1, 10, 52)
+    probs = model.predict(x, verbose=0)[0]      # (4,)
+    idx = int(np.argmax(probs))
     return (
-        flow_classes[idx],                                          # ชื่อ class
-        float(probs[idx]),                                          # confidence
-        {cls: float(p) for cls, p in zip(flow_classes, probs)},    # prob ทุก class
+        flow_classes[idx],
+        float(probs[idx]),
+        {cls: float(p) for cls, p in zip(flow_classes, probs)},
     )
 
 
@@ -231,39 +223,27 @@ def predict_intrusion(
 
 
 def predict_flow(
-    model,                     # tf.keras.Model — Flow GRU
-    scaler,                    # sklearn StandardScaler — fit บน CIC-IDS2018 (78 cols)
-    flow_keep_idx: list[int],  # index ของ 71 cols ที่โมเดลใช้จริง
+    model,                     # tf.keras.Model — Flow Model v2
+    flow_scaler,               # (mean, scale)
     flow_classes: list[str],   # ชื่อ 4 output classes
-    features: list[float],     # 78 raw features ของ 1 flow (จาก Test Page)
+    features: list[float],     # 43 primitives ของ 1 flow (ลำดับตาม flow_prim_cols)
+    gap_ms: float = 1000.0,    # ช่วงห่างระหว่าง flow ที่จำลอง (มิลลิวินาที)
+    same_dst: bool = True,     # flow ทั้งหมดยิง dst IP/port เดิมไหม
 ) -> tuple[str, float, dict[str, float]]:
-    """ทำนาย Flow attack แบบ single-flow (สำหรับ Manual Test Page เท่านั้น)
+    """ทำนาย Flow แบบ flow เดียว (Manual Test Page เท่านั้น)
 
-    ⚠️ เหมือน predict_intrusion — zero-pad window → ผลลัพธ์เป็น approximation
-    ⚠️ กฎสำคัญ: scale(78) ก่อน → slice(71) หลัง — ห้ามสลับลำดับ
+    จำลอง "source ที่ส่ง flow แบบนี้ซ้ำ 10 ครั้ง ห่างกัน gap_ms ไปที่ dst เดิม" แล้วส่งเป็น window จริง
+    — ไม่ใช้ zero-padding เหมือน v1 แต่ผลก็ยังเป็นการจำลอง ไม่ใช่ traffic จริง
+    (ใช้ดูว่า flow ลักษณะนี้ถ้าถูกยิงซ้ำถี่ๆ โมเดลมองเป็นอะไร)
 
     Returns: (class_name, confidence, all_probs)
     """
-    # Step 1: Scale 78 raw features → shape (1, 78)
-    # reshape(1, -1) แปลง list → (1, 78) ตามที่ scaler ต้องการ
-    scaled = scaler.transform(np.array(features).reshape(1, -1))  # shape: (1, 78)
-
-    # Step 2: Slice เหลือ 71 cols ที่โมเดลใช้จริง (ต้องทำ หลัง scale เสมอ)
-    sliced = scaled[:, flow_keep_idx]  # shape: (1, 71)
-
-    # สร้าง window (1, 10, 71) เต็มด้วยศูนย์ แล้วใส่ flow จริงที่แถวท้ายสุด
-    # len(flow_keep_idx) = 71 (จำนวน features หลัง slice)
-    window = np.zeros((1, 10, len(flow_keep_idx)))
-    window[0, 9, :] = sliced[0]  # ใส่ flow จริงที่ timestep ท้ายสุด
-
-    probs = model.predict(window, verbose=0)[0]  # shape: (4,)
-    idx = int(np.argmax(probs))
-
-    return (
-        flow_classes[idx],
-        float(probs[idx]),
-        {cls: float(p) for cls, p in zip(flow_classes, probs)},
-    )
+    base = flow_engineer(np.asarray(features, dtype=np.float64).reshape(1, -1))[0]  # (49,)
+    behaviour = np.zeros((10, 3), dtype=np.float32)  # flow แรกของ source = [0, 0, 0] เหมือนตอนเทรน
+    behaviour[1:, 0] = np.log1p(max(float(gap_ms), 0.0))
+    behaviour[1:, 1] = behaviour[1:, 2] = 1.0 if same_dst else 0.0
+    window = np.concatenate([np.tile(base, (10, 1)), behaviour], axis=1)  # (10, 52)
+    return predict_flow_window(model, flow_scaler, flow_classes, window)
 
 
 def encode_sqli_text(

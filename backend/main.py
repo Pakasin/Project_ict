@@ -38,11 +38,11 @@ async def lifespan(app: FastAPI):
     app.state.model_intrusion = tf.keras.models.load_model(
         str(MODELS_DIR / "best_nslkdd_SimpleRNN")
     )
-    # Flow Model: best_GRU.keras (71 features, GRU) คือ artifact จริงที่ serve
-    # ห้ามใช้ best.keras (78 features, LSTM) — ตัวนั้นมี 7 fingerprint features
-    # ที่ทำให้ f1 ปลอม 0.9999 (ดู CLAUDE.md) เก็บไว้เป็นหลักฐานเปรียบเทียบเท่านั้น
+    # Flow Model v2: best_flow_v2.keras (LSTM, 52 features, window ต่อ source IP)
+    # แทน best_GRU.keras (v1, 71 features) ซึ่งเก็บไว้บนดิสก์เพื่อเปรียบเทียบเท่านั้น
+    # ห้ามใช้ best.keras (78 features) — มี 7 fingerprint features ที่ทำให้ f1 ปลอม 0.9999
     app.state.model_flow = tf.keras.models.load_model(
-        str(MODELS_DIR / "best_GRU.keras")
+        str(MODELS_DIR / "best_flow_v2.keras")
     )
     app.state.model_sqli = tf.keras.models.load_model(
         str(MODELS_DIR / "best_sqli.keras")
@@ -51,15 +51,15 @@ async def lifespan(app: FastAPI):
     # --- โหลด scalers (fit บน train set เท่านั้น) ---
     app.state.scaler_intrusion = joblib.load(str(MODELS_DIR / "scaler_nslkdd.pkl"))
     app.state.label_encoders_intrusion = joblib.load(str(MODELS_DIR / "label_encoders_nslkdd.pkl"))
-    app.state.scaler_flow = joblib.load(str(MODELS_DIR / "scaler_csecicids2018.pkl"))
 
     # --- โหลด metadata + feature-slice map + sqli word_index ---
     artifacts = load_model_artifacts()
     app.state.model_metadata = artifacts["model_metadata"]
     app.state.sqli_metadata = artifacts["sqli_metadata"]
-    app.state.flow_raw_cols = artifacts["raw_cols"]
-    app.state.flow_trained_cols = artifacts["trained_cols"]
-    app.state.flow_keep_idx = artifacts["flow_keep_idx"]
+    app.state.flow_meta = artifacts["flow_meta"]
+    app.state.flow_scaler = artifacts["flow_scaler"]
+    app.state.flow_prim_cols = artifacts["flow_prim_cols"]
+    app.state.flow_feature_names = artifacts["flow_feature_names"]
     app.state.flow_classes = artifacts["flow_classes"]
     app.state.sqli_word_index = artifacts["sqli_word_index"]
 

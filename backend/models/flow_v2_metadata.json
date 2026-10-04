@@ -1,0 +1,218 @@
+{
+ "classes": [
+  "BENIGN",
+  "DoS",
+  "DDoS",
+  "BruteForce"
+ ],
+ "window_size": 10,
+ "window_key": "src_ip (per source IP, causal, no padding)",
+ "prim_cols": [
+  "Flow Duration",
+  "Total Fwd Packet",
+  "Total Bwd packets",
+  "Total Length of Fwd Packet",
+  "Total Length of Bwd Packet",
+  "Fwd Packet Length Max",
+  "Fwd Packet Length Min",
+  "Fwd Packet Length Mean",
+  "Fwd Packet Length Std",
+  "Bwd Packet Length Max",
+  "Bwd Packet Length Min",
+  "Bwd Packet Length Mean",
+  "Bwd Packet Length Std",
+  "Flow IAT Mean",
+  "Flow IAT Std",
+  "Flow IAT Max",
+  "Flow IAT Min",
+  "Fwd IAT Mean",
+  "Fwd IAT Std",
+  "Fwd IAT Max",
+  "Fwd IAT Min",
+  "Bwd IAT Mean",
+  "Bwd IAT Std",
+  "Bwd IAT Max",
+  "Bwd IAT Min",
+  "Fwd PSH Flags",
+  "Bwd PSH Flags",
+  "Fwd URG Flags",
+  "Bwd URG Flags",
+  "Fwd RST Flags",
+  "Bwd RST Flags",
+  "Packet Length Min",
+  "Packet Length Max",
+  "Packet Length Mean",
+  "Packet Length Std",
+  "FIN Flag Count",
+  "SYN Flag Count",
+  "RST Flag Count",
+  "PSH Flag Count",
+  "ACK Flag Count",
+  "URG Flag Count",
+  "CWR Flag Count",
+  "ECE Flag Count"
+ ],
+ "feature_names": [
+  "Flow Duration",
+  "Total Fwd Packet",
+  "Total Bwd packets",
+  "Total Length of Fwd Packet",
+  "Total Length of Bwd Packet",
+  "Fwd Packet Length Max",
+  "Fwd Packet Length Min",
+  "Fwd Packet Length Mean",
+  "Fwd Packet Length Std",
+  "Bwd Packet Length Max",
+  "Bwd Packet Length Min",
+  "Bwd Packet Length Mean",
+  "Bwd Packet Length Std",
+  "Flow IAT Mean",
+  "Flow IAT Std",
+  "Flow IAT Max",
+  "Flow IAT Min",
+  "Fwd IAT Mean",
+  "Fwd IAT Std",
+  "Fwd IAT Max",
+  "Fwd IAT Min",
+  "Bwd IAT Mean",
+  "Bwd IAT Std",
+  "Bwd IAT Max",
+  "Bwd IAT Min",
+  "Fwd PSH Flags",
+  "Bwd PSH Flags",
+  "Fwd URG Flags",
+  "Bwd URG Flags",
+  "Fwd RST Flags",
+  "Bwd RST Flags",
+  "Packet Length Min",
+  "Packet Length Max",
+  "Packet Length Mean",
+  "Packet Length Std",
+  "FIN Flag Count",
+  "SYN Flag Count",
+  "RST Flag Count",
+  "PSH Flag Count",
+  "ACK Flag Count",
+  "URG Flag Count",
+  "CWR Flag Count",
+  "ECE Flag Count",
+  "bytes_per_s",
+  "pkts_per_s",
+  "fwd_pkts_per_s",
+  "bwd_pkts_per_s",
+  "bwd_fwd_pkt_ratio",
+  "bytes_per_pkt",
+  "gap_log1p_ms",
+  "same_dst_ip_as_prev",
+  "same_dst_port_as_prev"
+ ],
+ "n_features": 52,
+ "clip": 6.0,
+ "gap_col": 49,
+ "order": "flows ordered by END time per source; gap = max(0, start - prev start)",
+ "threshold_default": 0.8,
+ "best_config": "lstm_s",
+ "config": {
+  "type": "lstm",
+  "units": [
+   48
+  ],
+  "fdrop": 0.1,
+  "noise": 0.15,
+  "wd": 0.0001,
+  "drop": 0.3
+ },
+ "epochs": 8,
+ "cv_summary": {
+  "gru_s": {
+   "best_epoch": 5,
+   "score_at_best": 0.8075008659483388,
+   "score_last": 0.7982835483924252,
+   "seed_std_at_best": 0.011919045466403447
+  },
+  "rnn_s": {
+   "best_epoch": 6,
+   "score_at_best": 0.7942667232962387,
+   "score_last": 0.7684892144680726,
+   "seed_std_at_best": 0.012879265052139204
+  },
+  "lstm_s": {
+   "best_epoch": 8,
+   "score_at_best": 0.8473885333115311,
+   "score_last": 0.7973444652155773,
+   "seed_std_at_best": 0.030984154814484573
+  },
+  "gru_reg": {
+   "best_epoch": 4,
+   "score_at_best": 0.8050645554908341,
+   "score_last": 0.7495790184146105,
+   "seed_std_at_best": 0.010019438046355031
+  }
+ },
+ "units": "time/IAT features in microseconds; sizes in payload bytes (nfstream accounting_mode=3)",
+ "evaluation": {
+  "known_tool_temporal_holdout": {
+   "note": "trained on first 65% (by time) of each tool + 2/3 of benign hosts; tested on last 30% / unseen benign hosts; lstm_s, 3 seeds, epoch 10 of the CV run (shipped model uses 8 epochs on all data). Optimistic: same tool and same attacker IP as training",
+   "benign_alert_rate": {
+    "mean": 0.0001,
+    "max": 0.00016
+   },
+   "tool_class_recall_mean": {
+    "GoldenEye": 1.0,
+    "HOIC": 0.994,
+    "Hulk": 1.0,
+    "LOIC-HTTP": 1.0,
+    "LOIC-UDP": 1.0,
+    "SSH": 1.0,
+    "Slowloris": 0.909
+   },
+   "accuracy_seed11": 0.9992
+  },
+  "unseen_tool_leave_out_cv": {
+   "note": "hold out whole attack tools; lstm_s, 3 seeds x 3 folds, last epoch; mean (min-max). NOT reliable for novel attack tools",
+   "tool_class_recall": {
+    "GoldenEye": {
+     "mean": 0.677,
+     "min": 0.036,
+     "max": 0.998
+    },
+    "HOIC": {
+     "mean": 0.007,
+     "min": 0.001,
+     "max": 0.018
+    },
+    "Hulk": {
+     "mean": 0.015,
+     "min": 0.002,
+     "max": 0.034
+    },
+    "LOIC-HTTP": {
+     "mean": 0.804,
+     "min": 0.488,
+     "max": 0.97
+    },
+    "LOIC-UDP": {
+     "mean": 0.34,
+     "min": 0.016,
+     "max": 0.97
+    },
+    "SSH": {
+     "mean": 1.0,
+     "min": 1.0,
+     "max": 1.0
+    },
+    "Slowloris": {
+     "mean": 0.511,
+     "min": 0.48,
+     "max": 0.534
+    }
+   }
+  },
+  "data": "CSE-CIC-IDS2018 improved (Engelen et al.); DoS = Hulk/GoldenEye/Slowloris, DDoS = LOIC-HTTP/LOIC-UDP/HOIC, BruteForce = SSH only; FTP/web brute-force and 'Attempted' flows excluded",
+  "limitations": [
+   "detects known attack-tool families; unseen tools (esp. DDoS/Hulk-like) are not reliably detected",
+   "BruteForce evidence is a single tool/day/attacker IP (SSH)",
+   "nfstream vs CICFlowMeter feature values are unverified on real traffic (no pcap parity test)"
+  ]
+ }
+}

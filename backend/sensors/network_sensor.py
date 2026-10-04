@@ -4,14 +4,19 @@ CyberShield — Network Sensor (nfstream)
 จับ live network flows จาก network interface
 แปลงเป็น features สำหรับ 2 models:
   - Intrusion Model (NSL-KDD): 41 features → R2L / U2R
-  - Flow Model (CSE-CIC-IDS2018): 78 raw features → scale → slice 71 → DoS / DDoS / BruteForce
+  - Flow Model v2 (CSE-CIC-IDS2018 improved): 43 primitives + 3 source-behaviour → 52 features
+    → DoS / DDoS / BruteForce
 
-Windows เรียงตามเวลาล้วน (chronological, ไม่ group by source IP — ดู CLAUDE.md
-"Neither dataset has a Source IP column"). ไม่ predict จนกว่าจะสะสมครบ 10 flows
-เพราะ training data ทิ้ง incomplete window ทิ้งไป โมเดลไม่เคยเห็น padding จริง
+Flow Model v2: window ต่อ source IP (10 flow ล่าสุดของ IP เดียวกัน) ผ่าน SourceWindowTracker
+ใน backend/flow_features.py — ไม่ predict จนกว่า IP นั้นสะสมครบ 10 flows เพราะ training
+ทิ้ง incomplete window โมเดลไม่เคยเห็น padding จริง (Intrusion Model ยังใช้ window ตามเวลาล้วน)
 
-⚠️ feature extraction ยังเป็น placeholder (TODO ด้านล่าง) — sensor นี้ยังใช้งาน
-จริงกับ traffic จริงไม่ได้จนกว่าจะ map field ครบ ต้องมี Linux VM + root ถึงจะทดสอบ
+NFStreamer ต้องตั้ง statistical_analysis=True, accounting_mode=3 (payload bytes) และ
+idle_timeout=120 ให้ตรงกับหน่วย/timeout ของ dataset ตอนเทรน
+
+⚠️ Flow v2: ค่าจาก nfstream กับ CICFlowMeter ยังไม่เคยตรวจเทียบบน traffic จริง (ไม่มี pcap)
+ต้องมี Linux VM + root ถึงจะทดสอบ และควรดูผลจริงก่อนเชื่อ threshold
+⚠️ Intrusion extractor (extract_nslkdd_features) ยังเป็น placeholder (TODO ด้านล่าง)
 
 ⚠️ ต้องรันเป็น root (raw socket access):
     sudo python backend/sensors/network_sensor.py
@@ -33,6 +38,11 @@ from backend.inference import (  # noqa: E402
     predict_intrusion_window,
     predict_flow_window,
 )
+from backend.flow_features import (  # noqa: E402
+    SourceWindowTracker,
+    nfstream_flow_meta,
+    nfstream_flow_to_primitives,
+)
 
 load_dotenv()
 
@@ -48,18 +58,17 @@ THRESHOLD_FLOW = float(os.getenv("THRESHOLD_FLOW", "0.80"))
 # ===== โหลด Models + Scalers =====
 print("📡 Loading models and scalers...")
 model_intrusion = tf.keras.models.load_model(os.path.join(MODELS_DIR, "best_nslkdd_smote.keras"))
-model_flow = tf.keras.models.load_model(os.path.join(MODELS_DIR, "best_GRU.keras"))
+model_flow = tf.keras.models.load_model(os.path.join(MODELS_DIR, "best_flow_v2.keras"))
 scaler_intrusion = joblib.load(os.path.join(MODELS_DIR, "scaler_nslkdd.pkl"))
-scaler_flow = joblib.load(os.path.join(MODELS_DIR, "scaler_csecicids2018.pkl"))
 _artifacts = load_model_artifacts()
-flow_keep_idx = _artifacts["flow_keep_idx"]
+flow_scaler = _artifacts["flow_scaler"]  # (mean, scale) ของ Flow Model v2
 FLOW_CLASSES = _artifacts["flow_classes"]
 print("✅ Models loaded")
 
 # ===== Sliding Window Buffer =====
-# chronological only — ไม่ group by source IP (ตาม CLAUDE.md)
+# Intrusion: chronological ล้วน (ตาม CLAUDE.md) | Flow v2: ต่อ source IP ผ่าน tracker
 nsl_window: deque = deque(maxlen=WINDOW_SIZE)
-cic_window: deque = deque(maxlen=WINDOW_SIZE)
+flow_tracker = SourceWindowTracker(window=WINDOW_SIZE)
 
 
 def extract_nslkdd_features(flow) -> list:
@@ -84,26 +93,9 @@ def extract_nslkdd_features(flow) -> list:
     return features
 
 
-def extract_csecicids2018_features(flow) -> list:
-    """แปลง nfstream flow → CSE-CIC-IDS2018 78 raw features (scale→slice ทำใน predict_flow)
-
-    TODO: implement mapping จาก nfstream attributes ไปยัง CSE-CIC-IDS2018 feature set
-    ต้อง map fields เช่น:
-    - Flow Duration, Total Fwd Packets, Total Backward Packets
-    - Flow Bytes/s, Flow Packets/s
-    - Fwd/Bwd Packet Length (Min/Max/Mean/Std)
-    - ... (ดู CSE-CIC-IDS2018 feature list, ลำดับต้องตรง feature_cols.json)
-    """
-    # Placeholder — ต้อง implement ตาม feature mapping ก่อนใช้งานจริง
-    features = [0.0] * 78
-    features[0] = float(getattr(flow, "bidirectional_duration_ms", 0))
-    features[1] = float(getattr(flow, "src2dst_packets", 0))
-    features[2] = float(getattr(flow, "dst2src_packets", 0))
-    features[3] = float(getattr(flow, "src2dst_bytes", 0))
-    features[4] = float(getattr(flow, "dst2src_bytes", 0))
-    features[5] = float(getattr(flow, "bidirectional_packets", 0))
-    features[6] = float(getattr(flow, "bidirectional_bytes", 0))
-    return features
+# Flow Model v2 ไม่ใช้ extractor แยกในไฟล์นี้อีกแล้ว: nfstream_flow_to_primitives() /
+# nfstream_flow_meta() / SourceWindowTracker อยู่ใน backend/flow_features.py ร่วมกับ train script
+# (parity test: tracker ตรงกับ pipeline ตอนเทรนบน 587k window — ต่างแค่ float rounding ของ gap ≤ 3e-4)
 
 
 def post_event(model_name: str, attack_class: str, confidence: float, source_ip: str) -> None:
@@ -132,17 +124,16 @@ def main():
     streamer = nfstream.NFStreamer(
         source=NETWORK_INTERFACE,
         statistical_analysis=True,
+        accounting_mode=3,   # payload bytes — ตรงกับขนาด packet ของ CICFlowMeter ตอนเทรน Flow v2
+        idle_timeout=120,    # 120s ตรงกับ flow timeout ของ dataset
     )
 
     for flow in streamer:
         src_ip = flow.src_ip
 
-        # เรียงตามเวลาล้วน — ไม่ group ตาม source IP (ดู CLAUDE.md)
-        # ไม่ predict จนกว่าจะสะสมครบ WINDOW_SIZE flows จริงๆ
-        # เพราะ training data ทิ้ง window ที่ไม่ครบ — โมเดลไม่เคยเห็น padding จริง
-        # ดังนั้นฝั่ง serving ต้องไม่สร้าง padding ขึ้นมาเอง
+        # Intrusion: เรียงตามเวลาล้วน ไม่ predict จนกว่าจะสะสมครบ WINDOW_SIZE flows จริงๆ
+        # (training ทิ้ง window ที่ไม่ครบ — ฝั่ง serving ต้องไม่สร้าง padding เอง)
         nsl_window.append(extract_nslkdd_features(flow))
-        cic_window.append(extract_csecicids2018_features(flow))
 
         if len(nsl_window) == WINDOW_SIZE:
             nsl_class, nsl_confidence, _ = predict_intrusion_window(
@@ -152,9 +143,14 @@ def main():
                 post_event("intrusion", nsl_class, nsl_confidence, src_ip)
                 print(f"🚨 [{src_ip}] Intrusion: {nsl_class} ({nsl_confidence:.1%})")
 
-        if len(cic_window) == WINDOW_SIZE:
+        # Flow v2: window ต่อ source IP — tracker คืน None จนกว่า IP นี้จะมีครบ 10 flow
+        _, start_ms, dst_ip, dst_port = nfstream_flow_meta(flow)
+        flow_window = flow_tracker.push(
+            src_ip, nfstream_flow_to_primitives(flow), start_ms, dst_ip, dst_port
+        )
+        if flow_window is not None:
             cic_class, cic_confidence, _ = predict_flow_window(
-                model_flow, scaler_flow, flow_keep_idx, FLOW_CLASSES, list(cic_window)
+                model_flow, flow_scaler, FLOW_CLASSES, flow_window
             )
             if cic_class != "BENIGN" and cic_confidence >= THRESHOLD_FLOW:
                 post_event("flow", cic_class, cic_confidence, src_ip)

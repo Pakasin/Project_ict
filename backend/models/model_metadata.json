@@ -6,16 +6,19 @@
       "DDoS",
       "BruteForce"
     ],
+    "version": "v2",
     "window_size": 10,
-    "n_features_raw": 78,
-    "n_features": 71,
-    "feature_set": "behavior",
-    "windowing_method": "chronological_no_grouping",
+    "window_key": "src_ip (per source IP, causal, no padding)",
+    "n_features_primitive": 43,
+    "n_features": 52,
+    "windowing_method": "per_source_ip",
     "requires": [
-      "feature_cols.json",
-      "trained_feature_cols.json",
-      "scaler_csecicids2018.pkl"
-    ]
+      "best_flow_v2.keras",
+      "flow_v2_scaler.json",
+      "flow_v2_metadata.json",
+      "backend/flow_features.py"
+    ],
+    "superseded": "v1 (best_GRU.keras, 78→71 features, chronological window) kept on disk for comparison only"
   },
   "intrusion_model": {
     "class_labels": [

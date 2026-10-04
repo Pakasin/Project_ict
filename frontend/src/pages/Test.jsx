@@ -35,7 +35,9 @@ export default function Test() {
 
   const [sqliPayload, setSqliPayload] = useState("' OR 1=1 --")
   const [intrusionFeatures, setIntrusionFeatures] = useState(Array(41).fill('0'))
-  const [flowFeatures, setFlowFeatures] = useState(Array(78).fill('0'))
+  const [flowFeatures, setFlowFeatures] = useState(Array(43).fill('0'))
+  const [flowGapMs, setFlowGapMs] = useState('1000')   // Flow v2: ช่วงห่างระหว่าง flow ที่จำลอง (ms)
+  const [flowSameDst, setFlowSameDst] = useState(true)  // Flow v2: ยิง dst IP/port เดิมตลอดไหม
   // Set when a real test-set sample is loaded via "randomize" — holds the
   // real evaluation's true_class/predicted_class/confidence/correct so the
   // result card can show a true-vs-predicted comparison. Cleared on any
@@ -69,6 +71,8 @@ export default function Test() {
       const names = modelInfo?.flow?.raw_feature_names
       if (!names) return
       setFlowFeatures(names.map((n) => String(sample.features[n])))
+      if (sample.gap_ms !== undefined) setFlowGapMs(String(Math.round(sample.gap_ms)))
+      if (sample.same_dst_ip !== undefined) setFlowSameDst(Boolean(sample.same_dst_ip))
     }
     setLoadedSample({
       model,
@@ -111,7 +115,11 @@ export default function Test() {
       let body = { model_name: modelName }
       if (modelName === 'sqli') body.payload = sqliPayload
       else if (modelName === 'intrusion') body.features = intrusionFeatures.map((v) => Number(v) || 0)
-      else if (modelName === 'flow') body.features = flowFeatures.map((v) => Number(v) || 0)
+      else if (modelName === 'flow') {
+        body.features = flowFeatures.map((v) => Number(v) || 0)
+        body.gap_ms = Number(flowGapMs) || 0
+        body.same_dst = flowSameDst
+      }
 
       const res = await fetch('/api/predict', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
       const data = await res.json()
@@ -261,7 +269,7 @@ export default function Test() {
         {activeTab === 'flow' && (
           <>
             <RandomizeRow model="flow" />
-            <p className="text-muted" style={{ fontSize: 13, margin: 0 }}>78 raw flow features (7 fingerprint columns dropped server-side) — classifies DoS, DDoS, and BruteForce.</p>
+            <p className="text-muted" style={{ fontSize: 13, margin: 0 }}>43 flow features that nfstream can measure. The model reads a window of 10 flows from one source IP, so this form simulates a source repeating this flow 10 times (gap and destination below) — classifies DoS, DDoS, and BruteForce. It recognises the attack tools in its training data; unseen tools are not reliably detected.</p>
             {loadedSample?.model === 'flow' && <div className="text-muted" style={{ fontSize: 11 }}>{t.manual.sampleLoadedNotice}</div>}
             <div className="features-grid-scroll">
               {flowFeatures.map((val, i) => {
@@ -275,6 +283,17 @@ export default function Test() {
                   </div>
                 )
               })}
+            </div>
+            <div style={{ display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
+              <div>
+                <label>gap_ms — time between the simulated flows</label>
+                <input className="input mono" type="number" step="any" min="0" value={flowGapMs} disabled={isGeneralView}
+                  onChange={(e) => setFlowGapMs(e.target.value)} style={{ padding: '4px 8px', fontSize: 12, width: 140 }} />
+              </div>
+              <label style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                <input type="checkbox" checked={flowSameDst} disabled={isGeneralView} onChange={(e) => setFlowSameDst(e.target.checked)} />
+                same destination IP/port every flow
+              </label>
             </div>
             <button className="btn btn-primary" style={{ alignSelf: 'flex-start' }} onClick={() => handlePredict('flow')} disabled={loading || isGeneralView}>
               {loading ? '...' : t.manual.executeBtn}
