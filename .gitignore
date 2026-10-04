@@ -84,3 +84,6 @@ Thumbs.db
 # Local database
 *.db
 
+
+# Recorded flow captures (sensor output, can be large)
+data/

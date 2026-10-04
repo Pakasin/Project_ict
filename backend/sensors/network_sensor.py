@@ -38,6 +38,7 @@ from backend.inference import (  # noqa: E402
     predict_intrusion_window,
     predict_flow_window,
 )
+from backend.rate_rules import RateRuleDetector  # noqa: E402
 from backend.flow_features import (  # noqa: E402
     SourceWindowTracker,
     nfstream_flow_meta,
@@ -69,6 +70,8 @@ print("✅ Models loaded")
 # Intrusion: chronological ล้วน (ตาม CLAUDE.md) | Flow v2: ต่อ source IP ผ่าน tracker
 nsl_window: deque = deque(maxlen=WINDOW_SIZE)
 flow_tracker = SourceWindowTracker(window=WINDOW_SIZE)
+# กฎอัตรา flow (ไม่ใช่ model) — จับ DoS/DDoS/BruteForce ที่ LSTM พลาดเพราะไม่เคยเห็นเครื่องมือนั้น
+rate_rules = RateRuleDetector()
 
 
 def extract_nslkdd_features(flow) -> list:
@@ -142,6 +145,13 @@ def main():
             if nsl_class != "Normal" and nsl_confidence >= THRESHOLD_INTRUSION:
                 post_event("intrusion", nsl_class, nsl_confidence, src_ip)
                 print(f"🚨 [{src_ip}] Intrusion: {nsl_class} ({nsl_confidence:.1%})")
+
+        # Rate rules: นับอัตรา flow ต่อ src/dst — ใช้เวลาจบ flow จาก nfstream (วินาที)
+        for alert in rate_rules.observe(
+            float(flow.bidirectional_last_seen_ms) / 1000.0, src_ip, flow.dst_ip, int(flow.dst_port)
+        ):
+            post_event("flow_rules", alert.attack_class, 1.0, alert.source_ip)
+            print(f"🚨 [{alert.source_ip}] Rate rule: {alert.attack_class} ({alert.detail})")
 
         # Flow v2: window ต่อ source IP — tracker คืน None จนกว่า IP นี้จะมีครบ 10 flow
         _, start_ms, dst_ip, dst_port = nfstream_flow_meta(flow)
