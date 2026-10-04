@@ -55,13 +55,21 @@ INTERNAL_TOKEN = os.getenv("INTERNAL_TOKEN", "")
 NETWORK_INTERFACE = os.getenv("NETWORK_INTERFACE", "eth0")
 THRESHOLD_INTRUSION = float(os.getenv("THRESHOLD_INTRUSION", "0.85"))
 THRESHOLD_FLOW = float(os.getenv("THRESHOLD_FLOW", "0.80"))
+# ปิดไว้ก่อน: extract_nslkdd_features ยังเป็น placeholder (เติมแค่ 6 จาก 41 features, ที่เหลือ 0)
+# และ NSL-KDD มี content features (hot, num_failed_logins, logged_in ...) ที่ nfstream วัดไม่ได้
+# ผล Intrusion บน traffic สดจึงไม่น่าเชื่อถือ — เปิดด้วย INTRUSION_LIVE_ENABLED=true เฉพาะตอนทดลอง
+INTRUSION_LIVE_ENABLED = os.getenv("INTRUSION_LIVE_ENABLED", "false").lower() in ("1", "true", "yes")
 
 # ===== โหลด Models + Scalers =====
 print("📡 Loading models and scalers...")
-# SimpleRNN (dir-format export) — ตรงกับ backend/main.py; best_nslkdd_smote.keras (LSTM+SMOTE) เก็บไว้เทียบเท่านั้น
-model_intrusion = tf.keras.models.load_model(os.path.join(MODELS_DIR, "best_nslkdd_SimpleRNN"))
+model_intrusion = scaler_intrusion = None
+if INTRUSION_LIVE_ENABLED:
+    # SimpleRNN (dir-format export) — ตรงกับ backend/main.py; best_nslkdd_smote.keras (LSTM+SMOTE) เก็บไว้เทียบเท่านั้น
+    model_intrusion = tf.keras.models.load_model(os.path.join(MODELS_DIR, "best_nslkdd_SimpleRNN"))
+    scaler_intrusion = joblib.load(os.path.join(MODELS_DIR, "scaler_nslkdd.pkl"))
+else:
+    print("⚠️ Intrusion Model live OFF (extractor เป็น placeholder) — ตั้ง INTRUSION_LIVE_ENABLED=true เพื่อเปิด")
 model_flow = tf.keras.models.load_model(os.path.join(MODELS_DIR, "best_flow_v2.keras"))
-scaler_intrusion = joblib.load(os.path.join(MODELS_DIR, "scaler_nslkdd.pkl"))
 _artifacts = load_model_artifacts()
 flow_scaler = _artifacts["flow_scaler"]  # (mean, scale) ของ Flow Model v2
 FLOW_CLASSES = _artifacts["flow_classes"]
@@ -137,9 +145,10 @@ def main():
 
         # Intrusion: เรียงตามเวลาล้วน ไม่ predict จนกว่าจะสะสมครบ WINDOW_SIZE flows จริงๆ
         # (training ทิ้ง window ที่ไม่ครบ — ฝั่ง serving ต้องไม่สร้าง padding เอง)
-        nsl_window.append(extract_nslkdd_features(flow))
+        if INTRUSION_LIVE_ENABLED:
+            nsl_window.append(extract_nslkdd_features(flow))
 
-        if len(nsl_window) == WINDOW_SIZE:
+        if INTRUSION_LIVE_ENABLED and len(nsl_window) == WINDOW_SIZE:
             nsl_class, nsl_confidence, _ = predict_intrusion_window(
                 model_intrusion, scaler_intrusion, list(nsl_window)
             )

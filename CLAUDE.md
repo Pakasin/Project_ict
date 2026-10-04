@@ -49,6 +49,8 @@ Network models use **Sliding Window** of shape `(10, features)`. The Intrusion M
 
 SQLi model: Embedding layer, no scaler. Uses `sqli_tokenizer.json` — a plain `{char: index}` dict (char-level, vocab=106, maxlen=221, `<OOV>` index 1), **not** a word-level Keras `Tokenizer` (vocab=10000, maxlen=200) — an earlier local `train_sqli.py` (now removed; training happens on Kaggle, not in this repo) built the latter and didn't match the artifact actually shipped in `backend/models/`. Treat `sqli_model_metadata.json` as the source of truth for this model, not any training script. Threshold default 0.75 (`THRESHOLD_SQLI`). Serving encodes char-by-char via `backend/inference.py::encode_sqli_text`, pre-padding/truncating to 221 (keras `pad_sequences` default direction).
 
+**Intrusion Model on live traffic is OFF by default** (`INTRUSION_LIVE_ENABLED=false` in `.env`): `network_sensor.py::extract_nslkdd_features` is a placeholder (6 of 41 features, rest 0) and NSL-KDD content features (`hot`, `num_failed_logins`, `logged_in`, …) cannot be measured by nfstream, so live Intrusion predictions would be meaningless. The API/Test page still serves the model on supplied features.
+
 ## Common Commands
 
 ```bash
