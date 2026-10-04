@@ -365,7 +365,8 @@ export default function Logs() {
     const q = searchQuery.toLowerCase()
     // matchQ: ตรงกับ search query ใน source_ip, attack_class, model_name หรือ ref
     const matchQ      = !q || [l.source_ip, l.attack_class, l.model_name, l.ref].some(v => v?.toLowerCase().includes(q))
-    const matchModel  = !modelFilter   || l.model_name?.toLowerCase().includes(modelFilter)
+    // 'flow' ต้องไม่ดึง flow_rules มาด้วย (includes จะตรงทั้งคู่)
+    const matchModel  = !modelFilter   || (l.model_name?.toLowerCase().includes(modelFilter) && !(modelFilter === 'flow' && l.model_name.toLowerCase().includes('flow_rules')))
     const matchAttack = !attackFilter  || l.attack_class === attackFilter
     const matchSev    = !severityFilter|| l.sevKey === severityFilter
     const matchStatus = !statusFilter  || l.statusKey === statusFilter
@@ -428,6 +429,7 @@ export default function Logs() {
               <option value="">โหมดทั้งหมด</option>
               <option value="intrusion">Intrusion LSTM (NSL-KDD)</option>
               <option value="flow">Flow LSTM (CSE-CIC-IDS2018)</option>
+              <option value="flow_rules">Rate rules (flow_rules)</option>
               <option value="injection">Injection LSTM (SQLi)</option>
             </select>
           </div>

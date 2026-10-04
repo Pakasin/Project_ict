@@ -149,7 +149,8 @@ export default function ThreatInspectModal({ event, onClose }) {
             <span className="mono">
               {/* แสดง dataset ที่ใช้ train model ตามชื่อโมเดล */}
               {event.model_name === 'intrusion' ? 'UNSW-NB15 LSTM (49 feats)' :
-               event.model_name === 'flow' ? 'CIC-IDS2018 LSTM (78 feats)' : 'Deep Embedding LSTM (SQLi)'}
+               event.model_name === 'flow' ? 'CIC-IDS2018 LSTM (78 feats)' :
+               event.model_name === 'flow_rules' ? 'Rate rules (no ML model)' : 'Deep Embedding LSTM (SQLi)'}
             </span>
           </div>
         </div>
