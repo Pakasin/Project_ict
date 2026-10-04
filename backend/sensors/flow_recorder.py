@@ -10,6 +10,14 @@ CyberShield — Flow Recorder (เก็บ flow จริงจาก nfstream 
 (ยืนยัน 0 flows ด้วย ab ยิงใส่ 127.0.0.1) — ข้อจำกัดของ nfstream/libpcap กับ loopback framing
 ต้องจับผ่าน interface จริง (เช่น enp0s3) หรือ veth/bridge ที่มี Ethernet framing เท่านั้น
 
+⚠️ ทดสอบแล้ว (VM จริง): nfstream live capture มีช่วง "warmup" หลังสร้าง NFStreamer — burst สั้นๆ
+ไม่กี่ครั้งที่จบเร็วมาก (เช่น SSH handshake เสร็จใน <100ms) ภายในไม่กี่วินาทีแรกอาจไม่ถูกจับเป็น flow เลย
+(ยืนยัน: 3 SSH attempts ติดกันหลัง recorder เริ่ม 2s ได้ 0 flow สด แต่ pcap เดียวกันอ่านย้อนหลังผ่าน
+nfstream offline ได้ครบ 3 flow ถูกต้องทุกค่า — ตัด live-capture timing ออกจากสมการแล้วพิสูจน์ว่า flow-matching
+logic ไม่ใช่ปัญหา) workload ที่ยืดยาวกว่านี้ (เช่น ab หลายร้อย request) ไม่เจอปัญหานี้เพราะมี traffic ต่อเนื่อง
+ข้ามช่วง warmup ไปเอง — เวลาเก็บ burst สั้น (brute-force, port scan) ให้ sleep ≥10s ก่อนเริ่มยิง และยิงหลายสิบครั้ง
+กระจายเวลา ไม่ใช่ไม่กี่ครั้งติดกันทันที
+
 Label: flow ที่ src_ip อยู่ใน --attacker ได้ label ตาม --label ที่เหลือเป็น BENIGN
 (ไม่ติด label ผิดถ้ามี traffic ปกติปนอยู่ระหว่างจับ)
 
@@ -26,6 +34,7 @@ Label: flow ที่ src_ip อยู่ใน --attacker ได้ label ต�
 import argparse
 import csv
 import os
+import signal
 import sys
 import threading
 import time
@@ -54,6 +63,10 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main():
+    # process group แยกของตัวเอง: nfstream fork worker ภายใน (ยืนยันจริงจากการทดสอบบน VM — process
+    # ค้างอยู่หลัง os._exit() ของ parent เป็นสิบนาที แย่ง capture กับรอบถัดไปจนได้ 0 flow) worker พวกนี้
+    # สืบ pgid จาก parent ตอน fork เลยฆ่าพร้อมกันได้ด้วย killpg ส่วน os._exit() เดิมฆ่าได้แค่ parent เอง
+    os.setpgrp()
     args = build_parser().parse_args()
     attackers = {a.strip() for a in args.attacker.split(",") if a.strip()}
     if args.label != "BENIGN" and not attackers:
@@ -81,8 +94,9 @@ def main():
     if deadline:
         def _hard_stop():
             print(f"⏱️ ครบ {args.max_minutes:g} นาทีแล้วแต่ไม่มี flow ใหม่เข้ามา "
-                  f"(source อาจเงียบ หรือ nfstream ยังไม่ flush flow — ดู idle_timeout) — บังคับหยุด", flush=True)
-            os._exit(0)  # ข้าม cleanup ปกติ: บันทึกสิ่งที่ flush แล้วไว้พอ ดีกว่าค้างไม่จบ
+                  f"(source อาจเงียบ หรือ nfstream ยังไม่ flush flow — ดู idle_timeout) — บังคับหยุดทั้ง process group",
+                  flush=True)
+            os.killpg(os.getpgrp(), signal.SIGKILL)  # ฆ่า nfstream worker ที่ fork ไว้ด้วย ไม่ใช่แค่ตัวเอง
 
         stop_timer = threading.Timer(args.max_minutes * 60, _hard_stop)
         stop_timer.daemon = True
@@ -108,7 +122,11 @@ def main():
             pass
     if stop_timer:
         stop_timer.cancel()
-    print(f"saved {path}  {counts}")
+    print(f"saved {path}  {counts}", flush=True)
+    # แม้จบ loop ปกติ (ไม่ใช่ watchdog) ก็ฆ่า process group ตัวเองตรงนี้ — ยืนยันจริงจากการทดสอบว่า
+    # nfstream worker ที่ fork ไว้ไม่จบเองตาม parent (แม้ parent คืนจาก main() / interpreter จะ exit
+    # ตามปกติ) ปล่อยไว้จะกลายเป็น orphan process ที่ยังแย่ง capture บน interface เดิมกับรอบถัดไป
+    os.killpg(os.getpgrp(), signal.SIGKILL)
 
 
 if __name__ == "__main__":

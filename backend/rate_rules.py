@@ -15,7 +15,11 @@ CyberShield — Rate rules (tool-agnostic DoS / DDoS / BruteForce detector)
 ข้อจำกัด (ตั้งใจให้ชัด):
   - Slowloris / slow-rate DoS ไม่จับ: flow น้อยแต่ค้างนาน nfstream ปล่อย flow ตอนจบ
   - threshold ตั้งสำหรับ home LAN — ต้องจูนด้วย traffic ปกติจริง (เช่น backup/torrent/โหลดเว็บหนัก
-    อาจทะลุ RATE_DOS_FLOWS) ค่าเริ่มต้นเป็นการเดา ยังไม่ผ่านการวัด
+    อาจทะลุ RATE_DOS_FLOWS) ยังไม่ใช่ตัวเลขที่ "ปรับจนแม่น" — เป็นแค่การเดาที่มีหลักฐานจริงรองรับครั้งเดียว
+    (ดู CONTEXT.md Known Limitations → "Own-LAN capture", 2026-10-05): ค่าเดิม RATE_DOS_FLOWS=200 แจ้งเตือน
+    DoS ผิดจาก `ab -n 200 -c 4` ปกติธรรมดา เลยปรับขึ้นเป็น 500 (ยังไม่มีข้อมูลว่าพอหรือเกิน — แค่ให้ช่องว่าง
+    มากกว่าค่าที่พิสูจน์แล้วว่าต่ำไป) ส่วน RATE_DDOS_FLOWS=500 พลาด DDoS จำลอง 20 source/60 flow รวม
+    (ต่ำกว่า threshold มาก) เลยลดเป็น 150 — ก็ยังเป็นการเดา ไม่ใช่ค่าที่วัดแล้วว่าถูก ต้องจูนต่อด้วย traffic จริง
   - นับตามเวลาของ flow ที่ nfstream ปล่อย (flow-end) ไม่ใช่เวลาเริ่มโจมตี → แจ้งช้ากว่าจริงได้
 """
 
@@ -42,9 +46,9 @@ class RateRuleDetector:
     def __init__(self, window_s=None, dos_flows=None, ddos_sources=None, ddos_flows=None,
                  bf_flows=None, cooldown_s=None, max_keys=100_000):
         self.window_s = _env_f("RATE_WINDOW_S", 10) if window_s is None else window_s
-        self.dos_flows = int(_env_f("RATE_DOS_FLOWS", 200) if dos_flows is None else dos_flows)
+        self.dos_flows = int(_env_f("RATE_DOS_FLOWS", 500) if dos_flows is None else dos_flows)
         self.ddos_sources = int(_env_f("RATE_DDOS_SOURCES", 20) if ddos_sources is None else ddos_sources)
-        self.ddos_flows = int(_env_f("RATE_DDOS_FLOWS", 500) if ddos_flows is None else ddos_flows)
+        self.ddos_flows = int(_env_f("RATE_DDOS_FLOWS", 150) if ddos_flows is None else ddos_flows)
         self.bf_flows = int(_env_f("RATE_BF_FLOWS", 15) if bf_flows is None else bf_flows)
         self.cooldown_s = _env_f("RATE_COOLDOWN_S", 30) if cooldown_s is None else cooldown_s
         self.max_keys = max_keys
