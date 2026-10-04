@@ -6,6 +6,10 @@ CyberShield — Flow Recorder (เก็บ flow จริงจาก nfstream 
 
 ⚠️ ใช้โจมตีได้เฉพาะเครื่อง/เครือข่ายที่เป็นของคุณเอง (เช่น VM เป้าหมายบน home LAN ของตัวเอง)
 
+⚠️ ทดสอบแล้ว (VM จริง, nfstream 6.6.0): --source lo (loopback) จับ flow ไม่ได้เลย แม้มี traffic จริง
+(ยืนยัน 0 flows ด้วย ab ยิงใส่ 127.0.0.1) — ข้อจำกัดของ nfstream/libpcap กับ loopback framing
+ต้องจับผ่าน interface จริง (เช่น enp0s3) หรือ veth/bridge ที่มี Ethernet framing เท่านั้น
+
 Label: flow ที่ src_ip อยู่ใน --attacker ได้ label ตาม --label ที่เหลือเป็น BENIGN
 (ไม่ติด label ผิดถ้ามี traffic ปกติปนอยู่ระหว่างจับ)
 
@@ -23,6 +27,7 @@ import argparse
 import csv
 import os
 import sys
+import threading
 import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
@@ -68,9 +73,25 @@ def main():
 
     deadline = time.time() + args.max_minutes * 60 if args.max_minutes else None
     counts = {}
+
+    # --max-minutes ใช้เช็คแค่ตอนมี flow ใหม่เข้ามาเท่านั้น (nfstream iterator เป็น blocking call
+    # ไม่มี API หยุดจากนอก loop) — ถ้า source เงียบ (เช่น flow ติดอยู่ใน idle_timeout 120s ยังไม่ถูกปล่อย)
+    # loop จะค้างได้แม้เลยเวลาที่ตั้งไปแล้ว watchdog thread นี้บังคับจบ process ให้แน่นอน
+    stop_timer = None
+    if deadline:
+        def _hard_stop():
+            print(f"⏱️ ครบ {args.max_minutes:g} นาทีแล้วแต่ไม่มี flow ใหม่เข้ามา "
+                  f"(source อาจเงียบ หรือ nfstream ยังไม่ flush flow — ดู idle_timeout) — บังคับหยุด", flush=True)
+            os._exit(0)  # ข้าม cleanup ปกติ: บันทึกสิ่งที่ flush แล้วไว้พอ ดีกว่าค้างไม่จบ
+
+        stop_timer = threading.Timer(args.max_minutes * 60, _hard_stop)
+        stop_timer.daemon = True
+        stop_timer.start()
+
     with open(path, "w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
         w.writerow(META_COLS + PRIM_COLS + ["tool", "label"])
+        f.flush()
         try:
             for flow in streamer:
                 src_ip, start_ms, dst_ip, dst_port = nfstream_flow_meta(flow)
@@ -78,13 +99,15 @@ def main():
                 counts[label] = counts.get(label, 0) + 1
                 w.writerow([src_ip, dst_ip, dst_port, start_ms, float(flow.bidirectional_last_seen_ms)]
                            + nfstream_flow_to_primitives(flow) + [args.tool, label])
+                f.flush()  # ทุกแถว: _hard_stop ใช้ os._exit ข้าม cleanup ปกติ ข้อมูลที่ยังไม่ flush จะหาย
                 if sum(counts.values()) % 500 == 0:
-                    f.flush()
                     print(f"  {counts}", flush=True)
                 if deadline and time.time() >= deadline:
                     break
         except KeyboardInterrupt:
             pass
+    if stop_timer:
+        stop_timer.cancel()
     print(f"saved {path}  {counts}")
 
 
