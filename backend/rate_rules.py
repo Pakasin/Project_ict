@@ -46,15 +46,21 @@ class RateRuleDetector:
     def __init__(self, window_s=None, dos_flows=None, ddos_sources=None, ddos_flows=None,
                  bf_flows=None, cooldown_s=None, max_keys=100_000):
         self.window_s = _env_f("RATE_WINDOW_S", 10) if window_s is None else window_s
-        self.dos_flows = int(_env_f("RATE_DOS_FLOWS", 500) if dos_flows is None else dos_flows)
-        self.ddos_sources = int(_env_f("RATE_DDOS_SOURCES", 20) if ddos_sources is None else ddos_sources)
-        self.ddos_flows = int(_env_f("RATE_DDOS_FLOWS", 150) if ddos_flows is None else ddos_flows)
-        self.bf_flows = int(_env_f("RATE_BF_FLOWS", 15) if bf_flows is None else bf_flows)
+        # Defaults retuned from real own-LAN nfstream captures (2026-10-06, 9 tool scenarios,
+        # replayed through RateRuleDetector). lan_tuned caught every DoS tool + the 10-source
+        # DDoS + port-22 BruteForce at the SAME benign false-alarm profile as the old defaults
+        # (which missed DDoS and BruteForce entirely). See CONTEXT.md Known Limitations →
+        # "Own-LAN capture round 2". Still env-overridable; still not valid for a large network.
+        self.dos_flows = int(_env_f("RATE_DOS_FLOWS", 300) if dos_flows is None else dos_flows)
+        self.ddos_sources = int(_env_f("RATE_DDOS_SOURCES", 5) if ddos_sources is None else ddos_sources)
+        self.ddos_flows = int(_env_f("RATE_DDOS_FLOWS", 50) if ddos_flows is None else ddos_flows)
+        self.bf_flows = int(_env_f("RATE_BF_FLOWS", 10) if bf_flows is None else bf_flows)
         self.cooldown_s = _env_f("RATE_COOLDOWN_S", 30) if cooldown_s is None else cooldown_s
         self.max_keys = max_keys
         self._pair: dict = {}      # (src, dst) -> deque[ts]
         self._auth: dict = {}      # (src, dst, port) -> deque[ts]
         self._dst: dict = {}       # dst -> deque[(ts, src)]
+        self._dst_src: dict = {}   # dst -> {src: count in window} — running source count (see below)
         self._last_alert: dict = {}
         self._n = 0
 
@@ -90,11 +96,23 @@ class RateRuleDetector:
                 alerts.append(RateAlert("BruteForce", "auth_port_rate", src,
                                         f"{len(a)} flows/{self.window_s:g}s {src}->{dst}:{dst_port}"))
 
+        # DDoS: count distinct sources hitting one dst. Keep a running {src: count} alongside the
+        # deque instead of rebuilding a set every flow — a real flood puts tens of thousands of
+        # flows in the window, and the per-flow set comprehension made this O(n²) (confirmed to
+        # stall on a 65k-flow synflood replay, 2026-10-06). Increment on append, decrement on trim.
         t = self._dst.setdefault(dst, deque())
+        sc = self._dst_src.setdefault(dst, {})
         t.append((ts_s, src))
-        self._trim(t, ts_s, tuples=True)
+        sc[src] = sc.get(src, 0) + 1
+        lo = ts_s - self.window_s
+        while t and t[0][0] < lo:
+            _, s_old = t.popleft()
+            if (c := sc.get(s_old, 0)) <= 1:
+                sc.pop(s_old, None)
+            else:
+                sc[s_old] = c - 1
         if len(t) >= self.ddos_flows:
-            n_src = len({s for _, s in t})
+            n_src = len(sc)
             if n_src >= self.ddos_sources and not self._cool(("DDoS", dst), ts_s):
                 alerts.append(RateAlert("DDoS", "dst_many_sources", dst,
                                         f"{len(t)} flows from {n_src} sources/{self.window_s:g}s ->{dst}"))
@@ -110,12 +128,16 @@ class RateRuleDetector:
         for table, tup in ((self._pair, False), (self._auth, False), (self._dst, True)):
             for k in [k for k, d in table.items() if not d or (d[-1][0] if tup else d[-1]) < lo]:
                 del table[k]
+        for k in list(self._dst_src):          # drop source-count maps for dsts no longer tracked
+            if k not in self._dst:
+                del self._dst_src[k]
         for k in [k for k, v in self._last_alert.items() if now - v > self.cooldown_s]:
             del self._last_alert[k]
         if len(self._pair) > self.max_keys:   # ยังเกินเพดานแม้ล้างแล้ว → ทิ้งทั้งหมดดีกว่า OOM
             self._pair.clear()
             self._auth.clear()
             self._dst.clear()
+            self._dst_src.clear()
 
 
 if __name__ == "__main__":
