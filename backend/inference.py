@@ -89,7 +89,9 @@ def load_model_artifacts() -> dict:
     # Flow Model v2: metadata + scaler (JSON mean/scale — ไม่พึ่ง pickle ของ sklearn)
     with open(MODELS_DIR / "flow_v2_metadata.json", encoding="utf-8") as f:
         flow_meta = json.load(f)
-    flow_scaler = load_flow_scaler(MODELS_DIR / "flow_v2_scaler.json")  # (mean, scale)
+    # serving scaler = finetuned model's scaler (fit on nfstream). flow_v2_scaler.json (CICFlowMeter)
+    # stays on disk for the archived v2 model only.
+    flow_scaler = load_flow_scaler(MODELS_DIR / "flow_finetuned_scaler.json")  # (mean, scale)
 
     # Schema guard: ถ้า artifact ไม่ตรงกับ flow_features.py ให้ fail ตอน startup
     # ดีกว่าทำนายผิดเงียบๆ (ลำดับ feature สำคัญ — model รับ array ไม่ใช่ dict)

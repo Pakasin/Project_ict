@@ -1,0 +1,65 @@
+{
+  "model": "best_flow_finetuned.keras",
+  "arch": "LSTM(48) + GaussianNoise + Dropout, 4-class softmax (same as v2 lstm_s)",
+  "classes": [
+    "BENIGN",
+    "DoS",
+    "DDoS",
+    "BruteForce"
+  ],
+  "window_size": 10,
+  "n_features": 52,
+  "scaler": "flow_finetuned_scaler.json (fit on CIC-IDS2017 nfstream; clip +-6)",
+  "nfstreamer": {
+    "statistical_analysis": true,
+    "accounting_mode": 3,
+    "idle_timeout": 120
+  },
+  "provenance": {
+    "base": "CIC-IDS2017 RAW pcap (Kaggle congyuanxu/cicids2017), re-extracted with OUR nfstream config so features match the live sensor. ~1.5M flows. Labelled timezone-free by IP+port (attacker 172.16.0.1 -> victim 192.168.10.50; Tue 21/22=BruteForce, Wed 80=DoS, Fri 80=DDoS). Tools: Hulk/GoldenEye/Slowloris/Slowhttptest, LOIC, FTP-/SSH-Patator.",
+    "finetune": "fine-tuned on own-LAN lab captures (42 nfstream captures, benign variety + DoS/DDoS/BF tools)",
+    "kaggle_kernels": {
+      "extract+train base": "pakasinprajusbsuk/cybershield-cicids-nfstream-flow",
+      "EDA": "pakasinprajusbsuk/cybershield-flow-eda"
+    }
+  },
+  "evaluation": {
+    "lab_heldout_serve_target": {
+      "BENIGN_false_alarm": 0.037,
+      "DoS_recall": 0.87,
+      "DDoS_recall": 0.99,
+      "BruteForce_recall": 1.0,
+      "note": "70/30 by tool; serve-env metric"
+    },
+    "cic_heldout_forgetting": {
+      "BENIGN": 0.99,
+      "DoS": 1.0,
+      "DDoS": 0.99,
+      "BruteForce": 0.97
+    },
+    "unseen_tool_cv": "leave-one-attack-tool-out: DoS unseen ~1.0 for most tools (synflood/httpflood/slowloris/siege/ab 0.8-1.0; low-concurrency dos_siege/dos_abflood weak); DDoS/BruteForce unseen limited (few tool variants in data)",
+    "eda_full_data_macroF1": {
+      "lab": 0.968,
+      "cic": 0.995
+    }
+  },
+  "comparison": {
+    "best_flow_v2 (CICFlowMeter) on nfstream": {
+      "DoS_recall": 0.13,
+      "DDoS": 0.0,
+      "BruteForce": 0.0,
+      "BENIGN_false_alarm": 0.135,
+      "note": "near-blind on real nfstream traffic -> why this model replaces it for serving"
+    },
+    "lab_only_model": {
+      "BENIGN_FA": 0.028,
+      "note": "matched sensor but tiny data, poor unseen-tool"
+    }
+  },
+  "limitations": [
+    "low-concurrency siege/ab DoS is ambiguous (looks like heavy-but-benign) -> dos_siege recall ~0",
+    "DDoS/BruteForce unseen-tool generalization limited by few tool variants",
+    "lab data is one VM/netns environment; a real deployment LAN should capture its own benign+attack",
+    "EDA macroF1 figures are on full (incl train) data = illustrative; honest numbers are the held-out splits above"
+  ]
+}

@@ -38,11 +38,15 @@ async def lifespan(app: FastAPI):
     app.state.model_intrusion = tf.keras.models.load_model(
         str(MODELS_DIR / "best_nslkdd_SimpleRNN")
     )
-    # Flow Model v2: best_flow_v2.keras (LSTM, 52 features, window ต่อ source IP)
-    # แทน best_GRU.keras (v1, 71 features) ซึ่งเก็บไว้บนดิสก์เพื่อเปรียบเทียบเท่านั้น
-    # ห้ามใช้ best.keras (78 features) — มี 7 fingerprint features ที่ทำให้ f1 ปลอม 0.9999
+    # Flow Model (serving): best_flow_finetuned.keras — LSTM 48, 52 features, window ต่อ source IP.
+    # CIC-IDS2017 raw pcap (re-extracted ด้วย nfstream config เรา: accounting_mode=3, idle_timeout=120)
+    # เป็นฐาน แล้ว fine-tune ด้วย own-LAN lab captures → ตรง sensor จริง (benign FA ~3.7% บน lab,
+    # DoS/DDoS/BF จับได้สด) และยังเก่งบน CIC. ใช้ flow_finetuned_scaler.json (fit บน nfstream).
+    # best_flow_v2.keras (เดิม, trained CICFlowMeter) เก็บบนดิสก์เพื่อเปรียบเทียบเท่านั้น — บน nfstream
+    # จริง DoS recall ~0.13 / DDoS-BF 0 (train/serve gap). best_GRU.keras / best.keras ก็ห้ามใช้ serve.
+    # เรื่องเต็ม: CONTEXT.md → "CIC-IDS2017 raw-pcap base + fine-tune".
     app.state.model_flow = tf.keras.models.load_model(
-        str(MODELS_DIR / "best_flow_v2.keras")
+        str(MODELS_DIR / "best_flow_finetuned.keras")
     )
     app.state.model_sqli = tf.keras.models.load_model(
         str(MODELS_DIR / "best_sqli.keras")
