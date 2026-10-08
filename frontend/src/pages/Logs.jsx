@@ -6,30 +6,17 @@
 //   - คลิกแถวเปิด ThreatInspectModal เพื่อดูรายละเอียด
 //   - Pagination แบบ 10 รายการต่อหน้า
 //   - Export CSV: ส่งออก log เป็นไฟล์ CSV สำหรับการวิเคราะห์ต่อ
-//   - ดึงข้อมูลจาก API (/api/logs) ใช้ MOCK_LOGS เป็น fallback
+//   - ดึงข้อมูลจาก API (/api/logs) + /api/incidents/statuses (ไม่มี mock — ถ้าว่างแสดง empty state)
 //   - เพิ่มเข้า Incidents เมื่อกด "Triage Event" บน alert row
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import React from 'react'
 import { useNavigate } from 'react-router-dom'
 import ThreatInspectModal from '../components/ThreatInspectModal'
 import InfoHelp from '../components/InfoHelp'
 import { playSound } from '../utils/sound'
 import { useApp } from '../context/AppContext'
-
-// ── Mock Data: ข้อมูลตัวอย่างสำรอง ──────────────────────────────────────────
-// แสดงเมื่อ API /api/logs ยังไม่มี data หรือเชื่อมต่อไม่ได้
-// แต่ละ object = 1 security event
-// ⚡ แก้ข้อมูลที่นี่ → เห็นผลทันทีในตาราง Log
-const MOCK_LOGS = [
-  { id: 1042, timestamp: '2025-05-26T09:41:07', ref: 'EVT-2025-1042', attack_class: 'SQL Injection', source_ip: '192.168.1.45', target: 'srv-db-01', severity: 'วิกฤต', sevKey: 'CRITICAL', status: 'บล็อกแล้ว', statusKey: 'BLOCKED', model_name: 'Injection LSTM', confidence: 0.97, is_alert: true },
-  { id: 1041, timestamp: '2025-05-25T22:18:53', ref: 'EVT-2025-1041', attack_class: 'Brute Force',   source_ip: '45.33.22.11',  target: 'srv-web-02', severity: 'สูง',   sevKey: 'HIGH',     status: 'กำลังตรวจสอบ', statusKey: 'INVESTIGATING', model_name: 'Intrusion LSTM', confidence: 0.91, is_alert: true },
-  { id: 1040, timestamp: '2025-05-25T18:02:31', ref: 'EVT-2025-1040', attack_class: 'Port Scan',     source_ip: '112.54.33.2',  target: 'dmz-fw-01',  severity: 'ปานกลาง', sevKey: 'MEDIUM', status: 'บล็อกแล้ว',       statusKey: 'BLOCKED',       model_name: 'Intrusion LSTM', confidence: 0.83, is_alert: true },
-  { id: 1039, timestamp: '2025-05-24T11:47:19', ref: 'EVT-2025-1039', attack_class: 'DDoS',          source_ip: '203.0.113.9',  target: 'lb-edge-01', severity: 'วิกฤต', sevKey: 'CRITICAL', status: 'แก้ไขแล้ว',    statusKey: 'MITIGATED',    model_name: 'Flow LSTM',      confidence: 0.96, is_alert: true },
-  { id: 1038, timestamp: '2025-05-23T08:15:02', ref: 'EVT-2025-1038', attack_class: 'Suspicious Activity', source_ip: '198.51.100.4', target: 'srv-auth-01', severity: 'ปานกลาง', sevKey: 'MEDIUM', status: 'แก้ไขแล้ว', statusKey: 'MITIGATED', model_name: 'Intrusion LSTM', confidence: 0.79, is_alert: false },
-  { id: 1037, timestamp: '2025-05-22T20:33:44', ref: 'EVT-2025-1037', attack_class: 'Brute Force',   source_ip: '77.68.45.12',  target: 'srv-web-01', severity: 'สูง',   sevKey: 'HIGH',     status: 'บล็อกแล้ว',    statusKey: 'BLOCKED',       model_name: 'Intrusion LSTM', confidence: 0.92, is_alert: true },
-]
 
 // ── สี badge ของระดับความรุนแรง (Severity) ──────────────────────────────────
 // ⚡ แก้สีที่นี่ → badge ในตาราง Log เปลี่ยนทันที
@@ -61,6 +48,8 @@ const ATTACK_PILL = {
   'R2L':                 { bg: 'rgba(234,179,8,.15)',   color: '#fbbf24' }, // เหลือง
   'U2R':                 { bg: 'rgba(249,115,22,.15)',  color: '#fb923c' }, // ส้ม
   'DoS':                 { bg: 'rgba(239,68,68,.15)',   color: '#f87171' }, // แดง
+  'SQLi':                { bg: 'rgba(239,68,68,.15)',   color: '#f87171' }, // ชื่อ class จริงจากโมเดล
+  'BruteForce':          { bg: 'rgba(249,115,22,.15)',  color: '#fb923c' }, // ชื่อ class จริงจากโมเดล
 }
 
 // ── Thai Date Picker (Date Range) ───────────────────────────────────────
@@ -298,9 +287,34 @@ export default function Logs() {
   const { t } = useApp()
   const navigate = useNavigate()
 
-  // สมมติเริ่มต้นจาก MOCK_LOGS — ใน production ให้ดึงจาก API /api/logs แทน
-  const [logs] = useState(MOCK_LOGS)
-  const [loading] = useState(false)    // ใช้แสดง spinner เมื่อดึงข้อมูลจาก API
+  // logs: ดึงจาก /api/logs จริง (ไม่มี mock) — เติม ref / sevKey / statusKey ให้ตารางใช้
+  const [logs, setLogs] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(false)
+
+  useEffect(() => { loadLogs() }, [])
+
+  async function loadLogs() {
+    setLoading(true); setError(false)
+    try {
+      const [logRes, stRes] = await Promise.all([
+        fetch('/api/logs?limit=500'),
+        fetch('/api/incidents/statuses'),
+      ])
+      const logData = await logRes.json()
+      if (!logData.ok) throw new Error('logs')
+      let statusMap = {}
+      try { const st = await stRes.json(); if (st.ok) statusMap = st.data } catch { /* ไม่มี status = OPEN */ }
+      setLogs(logData.data.map(e => ({
+        ...e,
+        ref: `EVT-${e.id}`,
+        sevKey: e.confidence >= 0.95 ? 'CRITICAL' : e.confidence >= 0.9 ? 'HIGH' : e.confidence >= 0.8 ? 'MEDIUM' : 'LOW',
+        statusKey: statusMap[e.id] || 'OPEN',
+      })))
+    } catch {
+      setError(true); setLogs([])
+    } finally { setLoading(false) }
+  }
 
   // ── Pagination ──
   const [page, setPage] = useState(1) // หน้าปัจจุบัน (เริ่มที่ 1)
@@ -315,7 +329,6 @@ export default function Logs() {
   const [severityFilter, setSeverityFilter] = useState('')  // ระดับความรุนแรง (CRITICAL/HIGH/MEDIUM/LOW)
   const [statusFilter,   setStatusFilter]   = useState('')  // สถานะ (BLOCKED/INVESTIGATING/MITIGATED)
   const [sourceIpFilter, setSourceIpFilter] = useState('')  // กรอง Source IP
-  const [targetFilter,   setTargetFilter]   = useState('')  // กรอง Target
   const [dateFrom,       setDateFrom]       = useState('')  // วันที่เริ่มต้น (ISO string)
   const [dateTo,         setDateTo]         = useState('')  // วันที่สิ้นสุด (ISO string)
 
@@ -327,7 +340,7 @@ export default function Logs() {
    */
   function handleExportCSV() {
     playSound('click')
-    const headers = ['id', 'ref', 'attack_class', 'source_ip', 'target', 'severity', 'status', 'model_name', 'confidence', 'timestamp']
+    const headers = ['id', 'ref', 'attack_class', 'source_ip', 'sevKey', 'statusKey', 'model_name', 'confidence', 'timestamp']
     const rows = [headers.join(','), ...filtered.map(r => headers.map(h => JSON.stringify(r[h] ?? '')).join(','))].join('\n')
     const blob = new Blob([rows], { type: 'text/csv;charset=utf-8;' })
     const url = URL.createObjectURL(blob)
@@ -354,7 +367,7 @@ export default function Logs() {
   function clearFilters() {
     playSound('click')
     setSearchQuery(''); setModelFilter(''); setAttackFilter('')
-    setSeverityFilter(''); setStatusFilter(''); setSourceIpFilter(''); setTargetFilter('')
+    setSeverityFilter(''); setStatusFilter(''); setSourceIpFilter('')
     setDateFrom(''); setDateTo('')
     setPage(1) // reset pagination
   }
@@ -371,11 +384,10 @@ export default function Logs() {
     const matchSev    = !severityFilter|| l.sevKey === severityFilter
     const matchStatus = !statusFilter  || l.statusKey === statusFilter
     const matchSrc    = !sourceIpFilter|| l.source_ip?.includes(sourceIpFilter)
-    const matchTgt    = !targetFilter  || l.target?.includes(targetFilter)
     // matchFrom/matchTo: ตรวจการเปรียบเทียบสตริง ISO โดยตรง (ใช้ได้เพราะ ISO format เรียง lexicographically)
     const matchFrom   = !dateFrom      || l.timestamp >= dateFrom
     const matchTo     = !dateTo        || l.timestamp.slice(0,10) <= dateTo
-    return matchQ && matchModel && matchAttack && matchSev && matchStatus && matchSrc && matchTgt && matchFrom && matchTo
+    return matchQ && matchModel && matchAttack && matchSev && matchStatus && matchSrc && matchFrom && matchTo
   })
 
   // คำนวณ pagination: จำนวนหน้าทั้งหมด และ logs ในหน้าปัจจุบัน
@@ -438,14 +450,7 @@ export default function Logs() {
             <select value={attackFilter} onChange={e => { setAttackFilter(e.target.value); setPage(1) }}
               style={{ padding: '9px 12px', border: '1px solid var(--border-soft)', borderRadius: 8, background: 'var(--row-head-bg)', color: 'var(--text)', fontSize: 13, cursor: 'pointer' }}>
               <option value="">ประเภทการโจมตีทั้งหมด</option>
-              <option value="SQL Injection">SQL Injection</option>
-              <option value="Brute Force">Brute Force</option>
-              <option value="DDoS">DDoS</option>
-              <option value="DoS">DoS</option>
-              <option value="Port Scan">Port Scan</option>
-              <option value="R2L">R2L</option>
-              <option value="U2R">U2R</option>
-              <option value="Suspicious Activity">Suspicious Activity</option>
+              {[...new Set(logs.map(l => l.attack_class))].sort().map(c => <option key={c} value={c}>{c}</option>)}
             </select>
           </div>
         </div>
@@ -492,15 +497,10 @@ export default function Logs() {
         </div>
 
         {/* Row 3 */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 12 }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             <label style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--text-tertiary)' }}>แหล่งที่มา</label>
             <input value={sourceIpFilter} onChange={e => { setSourceIpFilter(e.target.value); setPage(1) }} placeholder="ระบุ IP Address"
-              style={{ padding: '9px 12px', border: '1px solid var(--border-soft)', borderRadius: 8, background: 'var(--row-head-bg)', color: 'var(--text)', fontSize: 13, outline: 'none' }} />
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <label style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--text-tertiary)' }}>เป้าหมาย</label>
-            <input value={targetFilter} onChange={e => { setTargetFilter(e.target.value); setPage(1) }} placeholder="ระบุ IP Address"
               style={{ padding: '9px 12px', border: '1px solid var(--border-soft)', borderRadius: 8, background: 'var(--row-head-bg)', color: 'var(--text)', fontSize: 13, outline: 'none' }} />
           </div>
         </div>
@@ -530,7 +530,7 @@ export default function Logs() {
         ) : filtered.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--text-tertiary)', fontSize: 14 }}>
             <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" style={{ marginBottom: 12, opacity: .4 }}><rect x="5" y="3" width="14" height="18" rx="1"></rect><line x1="8" y1="8" x2="16" y2="8"></line><line x1="8" y1="12" x2="16" y2="12"></line><line x1="8" y1="16" x2="11" y2="16"></line></svg>
-            <div>ไม่พบข้อมูล</div>
+            <div>{error ? 'เชื่อมต่อ API ไม่ได้ — ไม่สามารถโหลดบันทึกเหตุการณ์' : logs.length === 0 ? 'ยังไม่มีเหตุการณ์ที่ตรวจพบ' : 'ไม่พบข้อมูล'}</div>
             <button onClick={clearFilters} style={{ marginTop: 14, padding: '8px 18px', borderRadius: 8, border: '1px solid var(--border-soft)', background: 'transparent', cursor: 'pointer', color: 'var(--text-secondary)', fontSize: 13 }}>ล้างตัวกรอง</button>
           </div>
         ) : (
@@ -539,7 +539,7 @@ export default function Logs() {
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                 <thead>
                   <tr style={{ borderBottom: '2px solid var(--border-soft)' }}>
-                    {['เวลา', 'รหัสอ้างอิง', 'ประเภทการโจมตี', 'แหล่งที่มา', 'เป้าหมาย', 'ความรุนแรง', 'สถานะ'].map(h => (
+                    {['เวลา', 'รหัสอ้างอิง', 'ประเภทการโจมตี', 'แหล่งที่มา', 'ความรุนแรง', 'สถานะ'].map(h => (
                       <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11.5, fontWeight: 600, color: 'var(--text-tertiary)', whiteSpace: 'nowrap' }}>{h}</th>
                     ))}
                   </tr>
@@ -566,9 +566,6 @@ export default function Logs() {
                         </td>
                         <td style={{ padding: '14px 14px', verticalAlign: 'middle' }}>
                           <span className="mono" style={{ fontSize: 12.5 }}>{log.source_ip}</span>
-                        </td>
-                        <td style={{ padding: '14px 14px', verticalAlign: 'middle' }}>
-                          <span style={{ fontSize: 12.5 }}>{log.target}</span>
                         </td>
                         <td style={{ padding: '14px 14px', verticalAlign: 'middle' }}>
                           <span style={{ background: sev.bg, color: sev.color, fontSize: 12, fontWeight: 700, padding: '5px 12px', borderRadius: 999, display: 'flex', alignItems: 'center', gap: 6, width: 'fit-content' }}>

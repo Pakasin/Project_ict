@@ -171,6 +171,99 @@ def get_prediction_events(
         conn.close()
 
 
+BENIGN_CLASSES = {"normal", "benign"}
+
+
+def _severity_band(confidence: float) -> str:
+    """ต้องตรงกับ getSevKey ใน frontend (>=.95 / >=.90 / >=.80 / else)"""
+    if confidence >= 0.95:
+        return "CRITICAL"
+    if confidence >= 0.90:
+        return "HIGH"
+    if confidence >= 0.80:
+        return "MEDIUM"
+    return "LOW"
+
+
+def _is_private_ip(ip: str) -> bool | None:
+    """True = ภายในเครือข่าย, False = ภายนอก, None = parse ไม่ได้"""
+    import ipaddress
+    try:
+        return ipaddress.ip_address(ip).is_private
+    except ValueError:
+        return None
+
+
+def get_event_stats(since: str | None = None, bucket_minutes: int = 60) -> dict:
+    """สรุปสถิติ prediction_events สำหรับ Dashboard/Analytics
+
+    Query แบบ portable (SELECT ธรรมดา) แล้วรวมยอดใน Python เพื่อให้ migrate PostgreSQL ได้
+    "alert" = is_alert=1 และ class ไม่ใช่ Normal/BENIGN
+    """
+    from collections import Counter
+    from datetime import datetime, timedelta
+
+    conn = get_db()
+    try:
+        query = ("SELECT model_name, attack_class, confidence, source_ip, timestamp, is_alert "
+                 "FROM prediction_events WHERE 1=1")
+        params: list = []
+        if since:
+            query += " AND timestamp >= ?"
+            params.append(since)
+        query += " ORDER BY timestamp ASC LIMIT 200000"
+        rows = conn.execute(query, params).fetchall()
+    finally:
+        conn.close()
+
+    by_class: Counter = Counter()
+    by_model: Counter = Counter()
+    by_severity: Counter = Counter()
+    top_sources: Counter = Counter()
+    scope: Counter = Counter()
+    buckets: dict[str, dict] = {}
+    total = alerts = 0
+    step = timedelta(minutes=max(1, bucket_minutes))
+
+    for r in rows:
+        total += 1
+        is_attack = bool(r["is_alert"]) and r["attack_class"].lower() not in BENIGN_CLASSES
+        # floor timestamp ลง bucket
+        try:
+            # ทิ้ง tzinfo เพื่อไม่ให้ timestamp ที่มี/ไม่มี "Z" แยก bucket กัน
+            ts = datetime.fromisoformat(r["timestamp"].replace("Z", "+00:00")).replace(tzinfo=None)
+            epoch = datetime(ts.year, ts.month, ts.day)
+            floored = epoch + ((ts - epoch) // step) * step
+            key = floored.isoformat()
+        except ValueError:
+            key = None
+        if key is not None:
+            b = buckets.setdefault(key, {"t": key, "alerts": 0, "normal": 0})
+            b["alerts" if is_attack else "normal"] += 1
+        if not is_attack:
+            continue
+        alerts += 1
+        by_class[r["attack_class"]] += 1
+        by_model[r["model_name"]] += 1
+        by_severity[_severity_band(r["confidence"])] += 1
+        top_sources[r["source_ip"]] += 1
+        private = _is_private_ip(r["source_ip"])
+        scope["internal" if private else "unknown" if private is None else "external"] += 1
+
+    def as_list(c: Counter, n: int | None = None) -> list[dict]:
+        return [{"key": k, "count": v} for k, v in c.most_common(n)]
+
+    return {
+        "totals": {"events": total, "alerts": alerts, "normal": total - alerts},
+        "by_class": as_list(by_class),
+        "by_model": as_list(by_model),
+        "by_severity": {k: by_severity.get(k, 0) for k in ("CRITICAL", "HIGH", "MEDIUM", "LOW")},
+        "top_sources": as_list(top_sources, 10),
+        "source_scope": {k: scope.get(k, 0) for k in ("internal", "external", "unknown")},
+        "timeline": [buckets[k] for k in sorted(buckets)],
+    }
+
+
 def set_incident_status(event_id: int, status: str, updated_by: str, updated_at: str) -> None:
     """Upsert สถานะ incident: INSERT ถ้ายังไม่มี, UPDATE ถ้ามีอยู่แล้ว
 

@@ -7,7 +7,7 @@
 //   3. ข้อมูลประสิทธิภาพโมเดล AI แต่ละตัว (accuracy, F1-score, latency)
 // ─────────────────────────────────────────────────────────────────────────────
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { playSound } from '../utils/sound';
 import { useApp } from '../context/AppContext';
 import InfoHelp from '../components/InfoHelp';
@@ -29,6 +29,35 @@ export default function Analytics() {
   // refreshKey: เพิ่มทุกครั้งที่กดรีเฟรช เพื่อ trigger re-fetch ข้อมูล
   const [refreshKey, setRefreshKey] = useState(0);
 
+  // stats: ผลจาก /api/stats (null = ยังไม่โหลด), modelInfo: สถานะโหลดโมเดลจาก /api/model-info
+  const [stats, setStats] = useState(null);
+  const [modelInfo, setModelInfo] = useState(null);
+  const [apiError, setApiError] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    // sensors บันทึกเวลาแบบ local ISO ไม่มี timezone → ส่ง since ในรูปแบบเดียวกัน
+    const p = (n) => String(n).padStart(2, '0');
+    const localIso = (d) => `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+    const spanMs = { '24h': 86400e3, '7d': 7 * 86400e3 }[timeRange];
+    const qs = new URLSearchParams({ bucket: '60' });
+    if (spanMs) qs.set('since', localIso(new Date(Date.now() - spanMs)));
+    (async () => {
+      try {
+        const [sRes, mRes] = await Promise.all([fetch(`/api/stats?${qs}`), fetch('/api/model-info')]);
+        const sData = await sRes.json();
+        if (!sData.ok) throw new Error('stats');
+        let mData = null;
+        try { mData = await mRes.json(); } catch { /* model-info ไม่บังคับ */ }
+        if (cancelled) return;
+        setStats(sData.data); setModelInfo(mData); setApiError(false);
+      } catch {
+        if (!cancelled) setApiError(true);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [timeRange, refreshKey]);
+
   /**
    * handleRefresh — รีเฟรชกราฟและข้อมูล (ทำงานเฉพาะเมื่อเชื่อมต่ออยู่)
    * ถ้าขาดการเชื่อมต่อ ปุ่มจะถูก disabled และฟังก์ชันนี้จะ return ทันที
@@ -39,19 +68,14 @@ export default function Analytics() {
     setRefreshKey(k => k + 1); // trigger re-render/re-fetch
   };
 
-  // ── ข้อมูลการกระจายประเภทภัยคุกคาม (Spectrum Bar Chart) ──
-  // สัดส่วนผลการจำแนกของโมเดลจากข้อมูลทดสอบ (demo data)
-  const spectrumRows = [
-    { label: 'ปกติ / ไม่โจมตี', count: 342, pct: '55.0', color: 'var(--green)' },
-    { label: 'DDoS', count: 84, pct: '13.5', color: 'var(--red)' },
-    { label: 'DoS', count: 56, pct: '9.0', color: 'var(--red)' },
-    { label: 'R2L (Remote to Local)', count: 23, pct: '3.7', color: 'var(--yellow)' },
-    { label: 'U2R (User to Root)', count: 9, pct: '1.4', color: 'var(--blue)' },
-    { label: 'Brute Force', count: 67, pct: '10.8', color: 'var(--blue)' },
-    { label: 'SQL Injection', count: 41, pct: '6.6', color: 'var(--border)' },
-    { label: 'อื่น ๆ / ไม่ทราบประเภท', count: 0, pct: '0.0', color: 'var(--text-tertiary)' }
-  ];
-  const displayTotal = 622; // ยอดรวมของแถวทั้งหมด
+  // ── ข้อมูลการกระจายประเภทภัยคุกคาม (Spectrum Bar Chart) — จาก /api/stats ──
+  const CLASS_COLOR = { DoS: 'var(--red)', DDoS: 'var(--red)', BruteForce: 'var(--orange-text-mid)', SQLi: 'var(--yellow)', R2L: 'var(--yellow)', U2R: 'var(--blue)' };
+  const displayTotal = stats?.totals.events ?? 0;
+  const classCount = (k) => stats?.by_class.find(c => c.key === k)?.count ?? 0;
+  const spectrumRows = stats ? [
+    { label: 'ปกติ / ไม่โจมตี', count: stats.totals.normal, color: 'var(--green)' },
+    ...stats.by_class.map(c => ({ label: c.key, count: c.count, color: CLASS_COLOR[c.key] || 'var(--blue)' })),
+  ].map(r => ({ ...r, pct: displayTotal ? ((r.count / displayTotal) * 100).toFixed(1) : '0.0' })) : [];
 
   /**
    * MitreIcon — ไอคอน SVG สำหรับแต่ละขั้นตอนใน MITRE ATT&CK
@@ -81,60 +105,29 @@ export default function Analytics() {
 
   // ── ข้อมูลแผนที่ MITRE ATT&CK ──
   // จับคู่เทคนิคการโจมตีที่ตรวจพบกับขั้นตอนมาตรฐาน MITRE ATT&CK
+  // ไม่มีแถว Reconnaissance/Port Scan — ไม่มีโมเดลหรือกฎตัวไหนตรวจจับได้ (ไม่แสดงของที่ตรวจไม่ได้)
   const mitreRows = [
-    { tactic: 'การลาดตระเวณ', technique: 'สแกนเครือข่าย', tacticEn: 'Reconnaissance', techEn: 'Network Scanning', sev: 'ปานกลาง', bg: 'var(--orange-bg-strong)', fg: 'var(--yellow-text)', icon: 'recon' },
-    { tactic: 'การเข้าถึงเบื้องต้น', technique: 'โจมตีแบบใช้ช่องโหว่จากข้อมูล (SQLi)', tacticEn: 'Initial Access', techEn: 'Exploit Public-Facing Application (SQLi)', sev: 'วิกฤต', bg: 'var(--red-bg-strong)', fg: 'var(--red-text-strong)', icon: 'initial' },
-    { tactic: 'การเข้าถึงข้อมูล', technique: 'โจมตีแบบ Brute Force', tacticEn: 'Credential Access', techEn: 'Brute Force', sev: 'สูง', bg: 'var(--orange-bg)', fg: 'var(--orange-text-mid)', icon: 'credential' },
-    { tactic: 'การเคลื่อนที่ในระบบ', technique: 'Remote to Local (R2L)', tacticEn: 'Lateral Movement', techEn: 'Remote Services', sev: 'วิกฤต', bg: 'var(--red-bg-strong)', fg: 'var(--red-text-strong)', icon: 'lateral' },
-    { tactic: 'การยกระดับสิทธิ์', technique: 'User to Root (U2R)', tacticEn: 'Privilege Escalation', techEn: 'Privilege Escalation', sev: 'วิกฤต', bg: 'var(--red-bg-strong)', fg: 'var(--red-text-strong)', icon: 'privilege' },
-    { tactic: 'ผลกระทบ', technique: 'Network DoS (DDoS/DoS)', tacticEn: 'Impact', techEn: 'Network Denial of Service', sev: 'สูง', bg: 'var(--orange-bg)', fg: 'var(--orange-text-mid)', icon: 'impact' },
+    { tactic: 'การเข้าถึงเบื้องต้น', technique: 'โจมตีแบบใช้ช่องโหว่จากข้อมูล (SQLi)', tacticEn: 'Initial Access', techEn: 'T1190 Exploit Public-Facing Application', count: classCount('SQLi'), bg: 'var(--red-bg-strong)', fg: 'var(--red-text-strong)', icon: 'initial' },
+    { tactic: 'การเข้าถึงข้อมูล', technique: 'โจมตีแบบ Brute Force', tacticEn: 'Credential Access', techEn: 'T1110 Brute Force', count: classCount('BruteForce'), bg: 'var(--orange-bg)', fg: 'var(--orange-text-mid)', icon: 'credential' },
+    { tactic: 'การเคลื่อนที่ในระบบ', technique: 'Remote to Local (R2L)', tacticEn: 'Lateral Movement', techEn: 'T1021 Remote Services', count: classCount('R2L'), bg: 'var(--red-bg-strong)', fg: 'var(--red-text-strong)', icon: 'lateral' },
+    { tactic: 'การยกระดับสิทธิ์', technique: 'User to Root (U2R)', tacticEn: 'Privilege Escalation', techEn: 'T1068 Exploitation for Privilege Escalation', count: classCount('U2R'), bg: 'var(--red-bg-strong)', fg: 'var(--red-text-strong)', icon: 'privilege' },
+    { tactic: 'ผลกระทบ', technique: 'Network DoS (DDoS/DoS)', tacticEn: 'Impact', techEn: 'T1498 Network Denial of Service', count: classCount('DoS') + classCount('DDoS'), bg: 'var(--orange-bg)', fg: 'var(--orange-text-mid)', icon: 'impact' },
   ];
 
   // ── ข้อมูลประสิทธิภาพโมเดล AI แต่ละตัว ──
   // แสดงในส่วน "ข้อมูลประสิทธิภาพโมเดล" ด้านล่าง เป็นการ์ด 3 ใบ (INTRUSION, FLOW, SQLI)
+  const modelAlerts = (k) => stats?.by_model.filter(m => m.key === k || (k === 'flow' && m.key === 'flow_rules')).reduce((n, m) => n + m.count, 0) ?? 0;
+  const modelLoaded = (k) => (modelInfo?.ok ? !!modelInfo[k]?.loaded : null);  // null = ไม่ทราบ
   const telemetryData = [
-    { 
-      tag: 'INTRUSION', 
-      name: 'Intrusion LSTM (NSL-KDD)', 
-      desc: 'ตรวจจับการโจมตีแบบ Zero-day และการยกระดับสิทธิ์ R2L/U2R',
-      inputLabel: 'รูปแบบข้อมูลนำเข้า',
-      inputShape: 'Packet + Flow', 
-      accLabel: 'ความแม่นยำ',
-      acc: '96.32%', 
-      f1Label: 'F1-SCORE',
-      f1: '0.9421', 
-      latencyLabel: 'เวลาประมวลผลเฉลี่ย',
-      latency: '12.6 ms',
-      icon: <path d="M18 20V10 M12 20V4 M6 20v-6" />
-    },
-    { 
-      tag: 'FLOW', 
-      name: 'Flow LSTM (CSE-CIC-IDS2018)', 
-      desc: 'ตรวจจับการโจมตี DDoS, DoS และรูปแบบ Brute Force',
-      inputLabel: 'รูปแบบข้อมูลนำเข้า',
-      inputShape: 'NetFlow + Packet', 
-      accLabel: 'ความแม่นยำ',
-      acc: '97.15%', 
-      f1Label: 'F1-SCORE',
-      f1: '0.9534', 
-      latencyLabel: 'เวลาประมวลผลเฉลี่ย',
-      latency: '15.2 ms',
-      icon: <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z M3.27 6.96L12 12.01l8.73-5.05 M12 22.08V12" />
-    },
-    { 
-      tag: 'SQLI', 
-      name: 'Injection LSTM (SQLi)', 
-      desc: 'ตรวจจับ SQL Injection จาก Query String และ Payload',
-      inputLabel: 'รูปแบบข้อมูลนำเข้า',
-      inputShape: 'Query + Payload', 
-      accLabel: 'ความแม่นยำ',
-      acc: '95.48%', 
-      f1Label: 'F1-SCORE',
-      f1: '0.9317', 
-      latencyLabel: 'เวลาประมวลผลเฉลี่ย',
-      latency: '9.8 ms',
-      icon: <path d="M4 5a8 3 0 1 0 16 0A8 3 0 1 0 4 5z M4 5v14c0 1.66 3.58 3 8 3s8-1.34 8-3V5 M4 12c0 1.66 3.58 3 8 3s8-1.34 8-3" />
-    },
+    { tag: 'INTRUSION', key: 'intrusion', name: 'Intrusion Model (NSL-KDD, SimpleRNN)', desc: 'ตรวจจับ R2L/U2R — ปิดบนทราฟฟิกสดโดยค่าเริ่มต้น (วัด content features ด้วย nfstream ไม่ได้) ใช้ผ่านหน้า Test',
+      inputShape: 'หน้าต่าง 10 × 41', alerts: modelAlerts('intrusion'), loaded: modelLoaded('intrusion'),
+      icon: <path d="M18 20V10 M12 20V4 M6 20v-6" /> },
+    { tag: 'FLOW', key: 'flow', name: 'Flow Model (CIC-IDS2017 + lab fine-tune)', desc: 'ตรวจจับ DoS, DDoS และ Brute Force ต่อ source IP (รวมการแจ้งเตือนจากกฎ rate rules)',
+      inputShape: 'หน้าต่าง 10 × 52', alerts: modelAlerts('flow'), loaded: modelLoaded('flow'),
+      icon: <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z M3.27 6.96L12 12.01l8.73-5.05 M12 22.08V12" /> },
+    { tag: 'SQLI', key: 'sqli', name: 'Injection Model (SQLi, char-level)', desc: 'ตรวจจับ SQL Injection จาก Query String และ Payload ของ HTTP request',
+      inputShape: 'ตัวอักษร 221 ตัว', alerts: modelAlerts('sqli'), loaded: modelLoaded('sqli'),
+      icon: <path d="M4 7c0-1.1 3.6-2 8-2s8 .9 8 2-3.6 2-8 2-8-.9-8-2z M4 7v10c0 1.1 3.6 2 8 2s8-.9 8-2V7 M4 12c0 1.1 3.6 2 8 2s8-.9 8-2" /> },
   ];
 
   return (
@@ -185,12 +178,15 @@ export default function Analytics() {
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
             <div>
               <div className="card-title" style={{ fontSize: 15 }}>การกระจายประเภทภัยคุกคาม</div>
-              <div className="text-muted" style={{ fontSize: 11.5, marginTop: 4 }}>สัดส่วนผลการจำแนกของโมเดลจากข้อมูลทดสอบทั้งหมด</div>
+              <div className="text-muted" style={{ fontSize: 11.5, marginTop: 4 }}>สัดส่วนผลการจำแนกของโมเดลจากเหตุการณ์จริงที่บันทึกไว้ในช่วงเวลาที่เลือก</div>
             </div>
             <div className="tag tag-neutral" style={{ padding: '6px 12px', background: 'var(--gray-chip-bg)', color: 'var(--gray-chip-text)', fontSize: 11.5, fontWeight: 700 }}>รวมทั้งหมด {displayTotal} รายการ</div>
           </div>
           
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            {spectrumRows.length === 0 && (
+              <div className="text-muted" style={{ textAlign: 'center', padding: '28px 0', fontSize: 13 }}>{apiError ? 'เชื่อมต่อ API ไม่ได้' : 'ยังไม่มีเหตุการณ์ในช่วงเวลานี้'}</div>
+            )}
             {spectrumRows.map((row) => (
               <div key={row.label} className="bar-list-row" style={{ gap: 8 }}>
                 <div className="bar-list-head" style={{ fontSize: 13, color: 'var(--text)' }}>
@@ -220,7 +216,7 @@ export default function Analytics() {
           <div className="mitre-row mitre-head" style={{ borderBottom: '1px solid var(--border-soft)', paddingBottom: 12, display: 'grid', gridTemplateColumns: '1fr 1.5fr auto', gap: 16 }}>
             <span style={{ color: 'var(--text-tertiary)', fontWeight: 600, fontSize: 11.5 }}>กลุ่มภัย</span>
             <span style={{ color: 'var(--text-tertiary)', fontWeight: 600, fontSize: 11.5 }}>เทคนิค (Technique)</span>
-            <span style={{ textAlign: 'right', color: 'var(--text-tertiary)', fontWeight: 600, fontSize: 11.5 }}>ความรุนแรง</span>
+            <span style={{ textAlign: 'right', color: 'var(--text-tertiary)', fontWeight: 600, fontSize: 11.5 }}>จำนวนที่ตรวจพบ</span>
           </div>
           
           {mitreRows.map((row, i) => (
@@ -242,12 +238,12 @@ export default function Analytics() {
               
               <div style={{ textAlign: 'right' }}>
                 <span className="tag" style={{ 
-                  background: row.bg, 
-                  color: row.fg,
+                  background: row.count > 0 ? row.bg : 'var(--gray-chip-bg)', 
+                  color: row.count > 0 ? row.fg : 'var(--text-tertiary)',
                   fontSize: 11.5,
                   padding: '5px 12px'
                 }}>
-                  {row.sev}
+                  {row.count} ครั้ง
                 </span>
               </div>
             </div>
@@ -257,14 +253,14 @@ export default function Analytics() {
 
       <div>
         <div className="card-title" style={{ marginBottom: 16, fontSize: 15, display: 'flex', alignItems: 'center', gap: 6 }}>
-          ข้อมูลประสิทธิภาพโมเดล <InfoHelp id="modelPerf" />
+          สถานะและการตรวจจับของโมเดล <InfoHelp id="modelPerf" />
         </div>
         <div className="model-grid">
           {telemetryData.map((m) => (
             <div key={m.tag} className="card elev-sm model-card" style={{ padding: '20px 22px', gap: 20 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span className="tag tag-neutral" style={{ padding: '4px 10px', fontSize: 11 }}>ผลลัพธ์สาธิต</span>
-                <span className="status-badge-online"><span className="status-dot dot-online"></span>ออนไลน์</span>
+                <span className="tag tag-neutral" style={{ padding: '4px 10px', fontSize: 11 }}>{m.tag}</span>
+                {m.loaded === null ? <span className="text-muted" style={{ fontSize: 12 }}>ไม่ทราบสถานะ</span> : m.loaded ? <span className="status-badge-online"><span className="status-dot dot-online"></span>โหลดแล้ว</span> : <span className="text-muted" style={{ fontSize: 12 }}>ยังไม่โหลด</span>}
               </div>
               
               <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
@@ -282,20 +278,12 @@ export default function Analytics() {
               
               <div className="model-stats-grid" style={{ gridTemplateColumns: '1fr 1fr', gap: 16, marginTop: 4 }}>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                  <span className="model-stat-label text-muted" style={{ fontSize: 11 }}>{m.inputLabel}</span>
+                  <span className="model-stat-label text-muted" style={{ fontSize: 11 }}>รูปแบบข้อมูลนำเข้า</span>
                   <span className="model-stat-value" style={{ fontSize: 14, fontWeight: 700 }}>{m.inputShape}</span>
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                  <span className="model-stat-label text-muted" style={{ fontSize: 11 }}>{m.accLabel}</span>
-                  <span className="model-stat-value" style={{ fontSize: 15, fontWeight: 700 }}>{m.acc}</span>
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                  <span className="model-stat-label text-muted" style={{ fontSize: 11, display: 'flex', alignItems: 'center', gap: 4 }}>{m.f1Label} <InfoHelp id="f1score" /></span>
-                  <span className="model-stat-value" style={{ fontSize: 15, fontWeight: 700 }}>{m.f1}</span>
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                  <span className="model-stat-label text-muted" style={{ fontSize: 11 }}>{m.latencyLabel}</span>
-                  <span className="model-stat-value" style={{ fontSize: 15, fontWeight: 700 }}>{m.latency}</span>
+                  <span className="model-stat-label text-muted" style={{ fontSize: 11 }}>แจ้งเตือนในช่วงเวลาที่เลือก</span>
+                  <span className="model-stat-value" style={{ fontSize: 15, fontWeight: 700 }}>{m.alerts}</span>
                 </div>
               </div>
             </div>

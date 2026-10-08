@@ -91,6 +91,10 @@ Schema uses no SQLite-specific types — designed for PostgreSQL migration.
 
 Tables: `prediction_events` (model output log) + `incident_status`, `audit_log`, `blocked_ips` (Incidents/Settings-Firewall state — previously `localStorage` only, now persisted so it survives across browsers/devices). All three live in `backend/db.py` alongside `prediction_events`.
 
+## Dashboard data
+
+Dashboard/Analytics/Logs/Incidents show **real data only** — no mock fallbacks; empty or API-down states render explicit empty/error UI. Aggregates come from `GET /api/stats?since=&bucket=` (`backend/db.py::get_event_stats`, `backend/routes/stats.py`). An "alert" there = `is_alert=1` and class not Normal/BENIGN. `prediction_events` has no dst IP/port/bytes, so widgets needing those (pps charts, target columns) don't exist. Sensors write local naive ISO timestamps, so the frontend sends `since` in the same format. "Blocked IPs" are **recorded only** — nothing enforces them at a firewall yet.
+
 ## Inference logic
 
 `backend/inference.py` (with `backend/flow_features.py` for the Flow Model v2 features/window) holds the scale (Flow Model) and char-encode (SQLi) logic shared between `POST /api/predict` (manual test, single zero-padded / simulated sample) and the live sensors (`network_sensor.py`, `http_sensor.py`, real accumulated windows). Do not duplicate this logic in a route or sensor — import from here so the two paths can't drift apart again.

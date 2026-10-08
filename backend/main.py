@@ -86,9 +86,10 @@ app.add_middleware(
 )
 
 # --- Include Routers ---
-from backend.routes import auth, predict, internal, logs, ws, incidents  # noqa: E402
+from backend.routes import auth, predict, internal, logs, ws, incidents, stats  # noqa: E402
 
 app.include_router(auth.router)
+app.include_router(stats.router)
 app.include_router(predict.router)
 app.include_router(internal.router)
 app.include_router(logs.router)

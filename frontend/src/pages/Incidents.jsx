@@ -5,7 +5,7 @@
 //   - ตารางรายการเหตุการณ์พร้อม filter/search/sort และ date picker ภาษาไทย
 //   - Triage flow: OPEN → INVESTIGATING → MITIGATED (สิ้นสุด)
 //   - Donut Chart สัดส่วนระดับความรุนแรง + Audit Log การดำเนินการ
-//   - ดึงข้อมูลจาก API (/api/logs, /api/incidents/statuses) ใช้ MOCK_INCIDENTS เป็น fallback
+//   - ดึงข้อมูลจาก API (/api/logs, /api/incidents/statuses) ไม่มี mock — ถ้า API ล้มเหลวแสดง error banner
 //   - Live feed: subscribe WebSocket /ws/feed เพื่อรับ alert ใหม่แบบ real-time
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -15,22 +15,6 @@ import ThreatInspectModal from '../components/ThreatInspectModal';
 import InfoHelp from '../components/InfoHelp';
 import { useApp } from '../context/AppContext';
 import { CONN_STATUS } from '../hooks/useConnectionStatus';
-
-// ── ข้อมูลจำลอง (Mock Data) — ใช้เมื่อยังไม่มีข้อมูลจาก API ────────────────────────────────────────────
-const MOCK_INCIDENTS = [
-  { id: 1, timestamp: '2025-05-19T14:32:11', attack_class: 'SQL Injection', description: 'SQL Injection attempt on login endpoint', detail: "GET /login.php?id=1 OR '1'='1'", source_ip: '203.0.113.45', source_flag: '🇺🇸', target: '192.168.1.45', severity: 'วิกฤต', sevKey: 'CRITICAL', status: 'OPEN', model_name: 'Injection LSTM', confidence: 0.97 },
-  { id: 2, timestamp: '2025-05-19T14:28:45', attack_class: 'Brute Force', description: 'Multiple failed login attempts detected', detail: '(admin)', source_ip: '198.51.100.23', source_flag: '🇩🇪', target: '192.168.1.45', severity: 'สูง', sevKey: 'HIGH', status: 'INVESTIGATING', model_name: 'Intrusion LSTM', confidence: 0.91 },
-  { id: 3, timestamp: '2025-05-19T14:21:07', attack_class: 'DDoS', description: 'High volume of traffic detected', detail: '(UDP Flood)', source_ip: '198.51.100.77', source_flag: '🇩🇪', target: '192.168.1.45', severity: 'สูง', sevKey: 'HIGH', status: 'OPEN', model_name: 'Flow LSTM', confidence: 0.95 },
-  { id: 4, timestamp: '2025-05-19T14:15:33', attack_class: 'Port Scan', description: 'Sequential port scanning detected', detail: '(20 ports)', source_ip: '203.0.113.88', source_flag: '🇹🇭', target: '192.168.1.45', severity: 'ปานกลาง', sevKey: 'MEDIUM', status: 'MITIGATED', model_name: 'Intrusion LSTM', confidence: 0.83 },
-  { id: 5, timestamp: '2025-05-19T14:03:55', attack_class: 'Suspicious Activity', description: 'Suspicious request to sensitive file', detail: '(/etc/passwd)', source_ip: '192.0.2.56', source_flag: '🇹🇭', target: '192.168.1.45', severity: 'ต่ำ', sevKey: 'LOW', status: 'MITIGATED', model_name: 'Intrusion LSTM', confidence: 0.78 },
-];
-
-const MOCK_AUDIT = [
-  { id: 1, timestamp: '2025-05-19T12:30:00', username: 'admin Administrator', action: 'กักกัน IP Address 203.0.113.45 เรียบร้อย', icon: 'check', color: 'var(--green)', bg: 'var(--green-bg)' },
-  { id: 2, timestamp: '2025-05-19T12:17:00', username: 'admin Administrator', action: 'บล็อก Signature ID 1200456 บนระบบ IPS', icon: 'block', color: 'var(--red)', bg: 'var(--red-bg)' },
-  { id: 3, timestamp: '2025-05-19T12:06:00', username: 'admin Administrator', action: 'เพิ่มกฎ Firewall ป้องกัน SQL Injection', icon: 'calendar', color: 'var(--text-secondary)', bg: 'var(--row-head-bg)' },
-  { id: 4, timestamp: '2025-05-19T11:50:00', username: 'admin Administrator', action: 'ตรวจสอบแหล่งที่มา DDoS จาก 198.51.100', icon: 'search', color: 'var(--text-secondary)', bg: 'var(--row-head-bg)' },
-];
 
 const SEV_CONFIG = {
   CRITICAL: { label: 'วิกฤต', bg: 'rgba(239,68,68,.15)', color: '#f87171' },
@@ -70,7 +54,7 @@ function DonutChart({ counts, total }) {
     <svg width={160} height={160} viewBox="0 0 160 160">
       <circle cx={cx} cy={cy} r={R} fill="none" stroke="var(--border-soft)" strokeWidth={stroke} />
       {segments.map((seg) => {
-        const dash = (seg.count / total) * C;
+        const dash = (seg.count / (total || 1)) * C;
         const gap = C - dash;
         const el = (
           <circle key={seg.key} cx={cx} cy={cy} r={R} fill="none"
@@ -527,8 +511,9 @@ export default function Incidents() {
   const liveEnabled = conn.status !== CONN_STATUS.DISCONNECTED; // ปุ่มซิงค์ disabled ถ้าไม่เชื่อมต่อ
 
   // incidents: รายการทั้งหมด — เริ่มจาก MOCK แล้วเขียนทับด้วยข้อมูลจาก API
-  const [incidents,      setIncidents]      = useState(MOCK_INCIDENTS);
+  const [incidents,      setIncidents]      = useState([]);
   const [loading,        setLoading]        = useState(false);
+  const [loadError,      setLoadError]      = useState(false);  // true = เรียก /api/logs ไม่สำเร็จ
 
   // selectedEvent: event ที่คลิกเปิด ThreatInspectModal (null = ไม่มี modal เปิดอยู่)
   const [selectedEvent,  setSelectedEvent]  = useState(null);
@@ -536,7 +521,7 @@ export default function Incidents() {
   // ── Filter & Pagination State ──
   const [filterStatus,   setFilterStatus]   = useState('ALL');       // กรองตามสถานะ Triage
   const [statusMap,      setStatusMap]      = useState({});          // { id: 'OPEN'|'INVESTIGATING'|'MITIGATED' }
-  const [auditLogs,      setAuditLogs]      = useState(MOCK_AUDIT);  // บันทึกการดำเนินการ
+  const [auditLogs,      setAuditLogs]      = useState([]);  // บันทึกการดำเนินการ
   const [severityFilter, setSeverityFilter] = useState('ALL');       // กรองระดับความรุนแรง
   const [typeFilter,     setTypeFilter]     = useState('ALL');       // กรองประเภทการโจมตี
   const [dateFilter,     setDateFilter]     = useState('');          // ISO prefix filter ('YYYY-MM-DD')
@@ -552,12 +537,13 @@ export default function Incidents() {
   }, []);
 
   async function fetchAlerts() {
-    setLoading(true);
+    setLoading(true); setLoadError(false);
     try {
       const res = await fetch('/api/logs?limit=200&alerts_only=true');
       const data = await res.json();
-      if (data.ok && data.data.length > 0) setIncidents(data.data);
-    } catch { /* keep mock */ }
+      if (!data.ok) throw new Error('logs');
+      setIncidents(data.data);
+    } catch { setLoadError(true); setIncidents([]); }
     finally { setLoading(false); }
   }
 
@@ -573,7 +559,7 @@ export default function Incidents() {
     try {
       const res = await fetch('/api/audit-log?limit=50');
       const data = await res.json();
-      if (data.ok && data.data.length > 0) setAuditLogs(data.data);
+      if (data.ok) setAuditLogs(data.data);
     } catch { }
   }
 
@@ -615,7 +601,7 @@ export default function Incidents() {
 
   /**
    * getSev — ดึง Severity key ของ event
-   * - ถ้ามี sevKey ใน data (จาก MOCK) ใช้อันนั้นเลย
+   * - ถ้ามี sevKey ใน data ใช้อันนั้นเลย
    * - ถ้าไม่มี คำนวณจาก confidence (threshold เดียวกับ Dashboard)
    */
   function getSev(item) {
@@ -624,10 +610,10 @@ export default function Incidents() {
 
   const sevCounts = { CRITICAL: 0, HIGH: 0, MEDIUM: 0, LOW: 0, INFO: 0 };
   incidents.forEach(item => { const k = getSev(item); if (sevCounts[k] !== undefined) sevCounts[k]++; });
-  const total = incidents.length || 50;
-  const openCount = incidents.filter(i => getStatus(i) === 'OPEN').length || 8;
-  const invCount = incidents.filter(i => getStatus(i) === 'INVESTIGATING').length || 15;
-  const mitCount = incidents.filter(i => getStatus(i) === 'MITIGATED').length || 27;
+  const total = incidents.length;
+  const openCount = incidents.filter(i => getStatus(i) === 'OPEN').length;
+  const invCount = incidents.filter(i => getStatus(i) === 'INVESTIGATING').length;
+  const mitCount = incidents.filter(i => getStatus(i) === 'MITIGATED').length;
 
   const filterTabs = ['ทั้งหมด', 'เปิดอยู่', 'กำลังตรวจสอบ', 'แก้ไขแล้ว'];
   const filterKeys = ['ALL', 'OPEN', 'INVESTIGATING', 'MITIGATED'];
@@ -664,6 +650,12 @@ export default function Incidents() {
           <span style={{ marginLeft: 8 }}>ซิงค์ตัวแจ้งเตือน</span>
         </button>
       </div>
+
+      {loadError && (
+        <div className="card" style={{ padding: '12px 18px', borderLeft: '3px solid #f87171', color: '#f87171', fontSize: 13.5, fontWeight: 600 }}>
+          เชื่อมต่อ API ไม่ได้ — ไม่สามารถโหลดรายการเหตุการณ์ (ไม่แสดงข้อมูลตัวอย่าง)
+        </div>
+      )}
 
       {/* ── การ์ดสถิติ 3 ใบด้านบน ── */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
@@ -732,7 +724,7 @@ export default function Incidents() {
                     <span style={{ width: 10, height: 10, borderRadius: 999, background: v.color, display: 'inline-block' }} />
                     {v.label}
                   </span>
-                  <span style={{ fontWeight: 700 }}>{sevCounts[k]} <span className="text-muted" style={{ fontWeight: 400, fontSize: 12 }}>({((sevCounts[k]/total)*100).toFixed(0)}%)</span></span>
+                  <span style={{ fontWeight: 700 }}>{sevCounts[k]} <span className="text-muted" style={{ fontWeight: 400, fontSize: 12 }}>({((sevCounts[k]/(total || 1))*100).toFixed(0)}%)</span></span>
                 </div>
               ))}
             </div>

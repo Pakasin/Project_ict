@@ -160,25 +160,6 @@ export default function Settings() {
     } catch { }
   }
 
-  /**
-   * addDemoBlockedIp — เพิ่ม IP ทดสอบแบบสุ่มไปยัง blocked list (สำหรับ demo/ทดสอบ UI)
-   * สร้าง IP แบบสุ่มในช่วง 172.16.X.X แล้วส่ง POST /api/blocked-ips
-   */
-  async function addDemoBlockedIp() {
-    if (isGeneralView) return;
-    playSound('click');
-    const demoIp = `172.16.${Math.floor(Math.random() * 254 + 1)}.${Math.floor(Math.random() * 254 + 1)}`;
-    if (blockedIps.includes(demoIp)) return; // ไม่เพิ่ม IP ซ้ำ
-    try {
-      const res = await fetch('/api/blocked-ips', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ip: demoIp }),
-      });
-      const data = await res.json();
-      if (data.ok) { setBlockedIps(prev => [...prev, demoIp]); playSound('success'); }
-    } catch { }
-  }
-
   // ── รายการเมนูซ้าย (Sidebar Navigation ของ Settings) ─────────────────────────
   // แสดง role/firewall tab เฉพาะเมื่อ user มีสิทธิ์ (isAdminActual / !isGeneralView)
   const navItems = [
@@ -476,16 +457,11 @@ export default function Settings() {
                 <h3 style={{ ...SECTION_TITLE, margin: 0 }}>
                   รายการกักกัน IP <InfoHelp id="firewallHelp" /> <InfoHelp id="quarantineIp" />
                 </h3>
-                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                  <button onClick={addDemoBlockedIp} disabled={isGeneralView}
-                    style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid var(--border-soft)', background: 'var(--row-head-bg)', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: 12.5, display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-                    เพิ่ม IP ทดสอบ
-                  </button>
-                  <InfoHelp id="simulateBlockHelp" />
-                </div>
               </div>
-              <p style={SECTION_SUB}>รายการ IP Address ที่ถูกบล็อกโดยระบบป้องกันภัย</p>
+              <p style={SECTION_SUB}>รายการ IP Address ที่ถูกกักกันโดยผู้ดูแลระบบ</p>
+              <div style={{ margin: '0 0 14px', padding: '10px 14px', borderRadius: 8, borderLeft: '3px solid #fbbf24', background: 'rgba(251,191,36,.08)', color: '#fbbf24', fontSize: 12.5, fontWeight: 600 }}>
+                บันทึกเท่านั้น — ระบบยังไม่ได้บล็อก IP ที่ไฟร์วอลล์จริง (iptables/nft)
+              </div>
               {blockedIps.length === 0 ? (
                 <div style={{ padding: '32px 0', textAlign: 'center', color: 'var(--text-tertiary)', fontSize: 13 }}>
                   <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" style={{ marginBottom: 10, opacity: .4 }}><path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6l7-3z"></path><path d="M9.5 9.5l5 5M14.5 9.5l-5 5"></path></svg>
