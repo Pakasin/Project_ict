@@ -709,6 +709,7 @@ export default function Logs() {
                         </td>
                         <td style={{ padding: '14px 14px', verticalAlign: 'middle' }}>
                           <span style={{ background: st.bg, color: st.color, fontSize: 12, fontWeight: 600, padding: '5px 12px', borderRadius: 999 }}>{st.label}</span>
+                          {log.muted_by != null && <span className="muted-tag" title={`ปิดเสียงโดยกฎ #${log.muted_by} — ไม่นับเป็น alert`}>ปิดเสียง</span>}
                         </td>
                       </tr>
                     )

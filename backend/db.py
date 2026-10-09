@@ -103,6 +103,17 @@ CREATE TABLE IF NOT EXISTS sensor_heartbeat (
     last_seen TEXT NOT NULL,
     info      TEXT
 );
+CREATE TABLE IF NOT EXISTS mute_rules (
+    -- กฎปิดเสียง: event ที่ตรงกฎยังถูกบันทึก (ตรวจย้อนหลังได้) แต่ไม่นับเป็น alert และไม่ส่ง webhook
+    -- ต้องมีวันหมดอายุเสมอ (ไม่มีกฎถาวร) และต้องระบุอย่างน้อย source_ip หรือ attack_class
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    source_ip    TEXT,                 -- NULL = ทุก IP
+    attack_class TEXT,                 -- NULL = ทุกประเภท
+    reason       TEXT NOT NULL,
+    created_by   TEXT NOT NULL,
+    created_at   TEXT NOT NULL,        -- ISO 8601 เวลาท้องถิ่น (เหมือน sensor)
+    expires_at   TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS blocked_ips (
     -- รายการ IP ที่ถูก quarantine (block) โดย operator
     ip         TEXT PRIMARY KEY,  -- IP address (unique, ซ้ำไม่ได้)
@@ -139,7 +150,7 @@ def init_db() -> None:
         # migration: คอลัมน์ที่เพิ่มทีหลัง (ฐานข้อมูลเก่าไม่มี) — nullable จึงเพิ่มได้ปลอดภัย
         have = {r["name"] for r in conn.execute("PRAGMA table_info(prediction_events)")}
         for col, typ in (("dst_ip", "TEXT"), ("dst_port", "INTEGER"), ("protocol", "TEXT"),
-                         ("bytes", "INTEGER"), ("sensor", "TEXT")):
+                         ("bytes", "INTEGER"), ("sensor", "TEXT"), ("muted_by", "INTEGER")):
             if col not in have:
                 conn.execute(f"ALTER TABLE prediction_events ADD COLUMN {col} {typ}")
         conn.commit()
@@ -159,6 +170,7 @@ async def save_prediction_event(
     protocol: str | None = None,
     bytes_: int | None = None,
     sensor: str | None = None,
+    muted_by: int | None = None,   # id ของ mute rule ที่ปิดเสียง event นี้ (ถ้ามี — is_alert จะเป็น False)
 ) -> int:
     """บันทึก Prediction Event ลง SQLite แล้วคืน row id ของแถวที่เพิ่งบันทึก
 
@@ -170,11 +182,11 @@ async def save_prediction_event(
             """
             INSERT INTO prediction_events
                 (model_name, attack_class, confidence, source_ip, timestamp, is_alert,
-                 dst_ip, dst_port, protocol, bytes, sensor)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 dst_ip, dst_port, protocol, bytes, sensor, muted_by)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (model_name, attack_class, confidence, source_ip, timestamp, int(is_alert),
-             dst_ip, dst_port, protocol, bytes_, sensor),
+             dst_ip, dst_port, protocol, bytes_, sensor, muted_by),
         )
         conn.commit()
         return cursor.lastrowid
@@ -315,7 +327,7 @@ def get_event_stats(since: str | None = None, bucket_minutes: int = 60, until: s
 
     conn = get_db()
     try:
-        query = ("SELECT id, model_name, attack_class, confidence, source_ip, timestamp, is_alert, dst_ip, dst_port, protocol "
+        query = ("SELECT id, model_name, attack_class, confidence, source_ip, timestamp, is_alert, dst_ip, dst_port, protocol, muted_by "
                  "FROM prediction_events WHERE 1=1")
         params: list = []
         if since:
@@ -340,10 +352,13 @@ def get_event_stats(since: str | None = None, bucket_minutes: int = 60, until: s
     top_ports: Counter = Counter()
     by_protocol: Counter = Counter()
     buckets: dict[str, dict] = {}
-    total = alerts = resolved = 0
+    total = alerts = resolved = muted = 0
     step = timedelta(minutes=max(1, bucket_minutes))
 
     for r in rows:
+        if r["muted_by"]:
+            muted += 1      # ถูก mute rule ปิดเสียง: ไม่ใช่ alert และก็ไม่ใช่ "ปกติ" — นับแยก ไม่ให้ปนกราฟ
+            continue
         total += 1
         is_attack = bool(r["is_alert"]) and r["attack_class"].lower() not in BENIGN_CLASSES
         # floor timestamp ลง bucket
@@ -380,7 +395,7 @@ def get_event_stats(since: str | None = None, bucket_minutes: int = 60, until: s
         return [{"key": k, "count": v} for k, v in c.most_common(n)]
 
     return {
-        "totals": {"events": total, "alerts": alerts, "normal": total - alerts, "resolved": resolved},
+        "totals": {"events": total, "alerts": alerts, "normal": total - alerts, "resolved": resolved, "muted": muted},
         "by_class": as_list(by_class),
         "by_model": as_list(by_model),
         "by_severity": {k: by_severity.get(k, 0) for k in ("CRITICAL", "HIGH", "MEDIUM", "LOW")},
@@ -391,6 +406,58 @@ def get_event_stats(since: str | None = None, bucket_minutes: int = 60, until: s
         "source_scope": {k: scope.get(k, 0) for k in ("internal", "external", "unknown")},
         "timeline": [buckets[k] for k in sorted(buckets)],
     }
+
+
+# ── Mute rules ──────────────────────────────────────────────────────────────────
+
+def add_mute_rule(source_ip: str | None, attack_class: str | None, reason: str,
+                  created_by: str, created_at: str, expires_at: str) -> int:
+    conn = get_db()
+    try:
+        cur = conn.execute(
+            "INSERT INTO mute_rules (source_ip, attack_class, reason, created_by, created_at, expires_at) VALUES (?,?,?,?,?,?)",
+            (source_ip, attack_class, reason, created_by, created_at, expires_at))
+        conn.commit()
+        return cur.lastrowid
+    finally:
+        conn.close()
+
+
+def list_mute_rules(now_iso: str, include_expired: bool = False) -> list[dict]:
+    conn = get_db()
+    try:
+        q = "SELECT * FROM mute_rules"
+        params: list = []
+        if not include_expired:
+            q += " WHERE expires_at > ?"
+            params.append(now_iso)
+        rows = conn.execute(q + " ORDER BY expires_at ASC, id ASC", params).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def delete_mute_rule(rule_id: int) -> bool:
+    conn = get_db()
+    try:
+        cur = conn.execute("DELETE FROM mute_rules WHERE id = ?", (rule_id,))
+        conn.commit()
+        return cur.rowcount > 0
+    finally:
+        conn.close()
+
+
+def find_active_mute(source_ip: str, attack_class: str, now_iso: str) -> int | None:
+    """id ของกฎที่ยังไม่หมดอายุและตรงกับ event นี้ (NULL ในกฎ = ตรงทุกค่า, ที่ระบุต้องตรงแบบ exact) หรือ None"""
+    conn = get_db()
+    try:
+        row = conn.execute(
+            "SELECT id FROM mute_rules WHERE expires_at > ? "
+            "AND (source_ip IS NULL OR source_ip = ?) AND (attack_class IS NULL OR attack_class = ?) "
+            "ORDER BY id ASC LIMIT 1", (now_iso, source_ip, attack_class)).fetchone()
+        return row["id"] if row else None
+    finally:
+        conn.close()
 
 
 def set_incident_status(event_id: int, status: str, updated_by: str, updated_at: str) -> None:

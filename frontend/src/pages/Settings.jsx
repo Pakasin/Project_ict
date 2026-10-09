@@ -15,6 +15,7 @@ import { useApp } from '../context/AppContext';
 import InfoHelp from '../components/InfoHelp';
 import { CONN_STATUS } from '../hooks/useConnectionStatus';
 import { relativeTimeTh } from '../utils/time';
+import { MuteForm, MuteRuleList } from '../components/MuteRules';
 
 const INPUT_STYLE = {
   width: '100%', padding: '10px 14px', borderRadius: 9, border: '1px solid var(--border-soft)',
@@ -583,6 +584,7 @@ function SystemPanel({ isAdmin }) {
   const [msg, setMsg] = useState('');
   const [webhook, setWebhook] = useState('');     // URL webhook แจ้งเตือน (admin เท่านั้นที่อ่านได้)
   const [hookMsg, setHookMsg] = useState('');
+  const [muteKey, setMuteKey] = useState(0);        // เปลี่ยนค่า = โหลดรายการกฎใหม่
 
   async function loadHealth() {
     try {
@@ -685,6 +687,17 @@ function SystemPanel({ isAdmin }) {
           {!isAdmin && <span className="text-muted" style={{ fontSize: 12.5 }}>เฉพาะผู้ดูแลระบบ</span>}
           {msg && <span style={{ fontSize: 12.5, color: 'var(--text-secondary)' }}>{msg}</span>}
         </div>
+      </div>
+
+      <div className="card elev-sm" style={{ padding: '24px 28px' }}>
+        <h3 style={SECTION_TITLE}>ปิดเสียง alert (Mute rules)</h3>
+        <p style={SECTION_SUB}>ใช้กับเครื่อง/ประเภทที่รู้แน่ว่าเตือนผิด — ต้องมีวันหมดอายุเสมอ (สูงสุด 30 วัน, เฉพาะประเภทสูงสุด 7 วัน) และไม่ปิดเสียงทุกอย่างพร้อมกัน</p>
+        <MuteRuleList refreshKey={muteKey} />
+        {isAdmin ? (
+          <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid var(--border-soft)' }}>
+            <MuteForm onCreated={() => setMuteKey((k) => k + 1)} />
+          </div>
+        ) : <div className="text-muted" style={{ marginTop: 10, fontSize: 12.5 }}>เฉพาะผู้ดูแลระบบ</div>}
       </div>
 
       <div className="card elev-sm" style={{ padding: '24px 28px' }}>

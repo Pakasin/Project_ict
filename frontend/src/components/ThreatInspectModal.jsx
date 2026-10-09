@@ -6,9 +6,10 @@
 // Action (Admin เท่านั้น): Block & Quarantine IP, Export JSON Evidence
 // ─────────────────────────────────────────────────────────────────────────────
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { playSound } from '../utils/sound';
 import { useApp } from '../context/AppContext';
+import { MuteForm } from './MuteRules';
 
 /**
  * ThreatInspectModal — Modal ตรวจสอบภัยคุกคามแบบละเอียด
@@ -28,6 +29,9 @@ export default function ThreatInspectModal({ event, onClose }) {
   const [detail, setDetail] = useState(null);                 // /api/events/{id}: event เต็ม + notes + assignee + related
   const [noteText, setNoteText] = useState('');               // ข้อความบันทึกที่กำลังพิมพ์
   const [assigneeText, setAssigneeText] = useState('');       // ผู้รับผิดชอบที่กำลังพิมพ์
+  const [showMute, setShowMute] = useState(false);            // เปิดฟอร์มปิดเสียง alert แบบนี้
+  const muteRef = useRef(null);
+  useEffect(() => { if (showMute) muteRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }, [showMute]);
 
   // ── รายละเอียดเต็มของ event (dst/proto/bytes, บันทึก, ผู้รับผิดชอบ, events จาก IP เดียวกัน) ──
   async function loadDetail() {
@@ -139,6 +143,7 @@ export default function ThreatInspectModal({ event, onClose }) {
       <div className="dialog card blueprint elev-lg" onClick={(e) => e.stopPropagation()}>
         {/* มุมตกแต่งสไตล์ blueprint */}
         <i className="corner tl"></i><i className="corner tr"></i><i className="corner bl"></i><i className="corner br"></i>
+        <div className="dialog-body">
 
         {/* ── ส่วนหัว Modal: ไอคอน + หัวข้อ + เลข Ref + ปุ่มปิด ── */}
         <div className="modal-header">
@@ -267,6 +272,13 @@ export default function ThreatInspectModal({ event, onClose }) {
           </div>
         )}
 
+        {/* ── event นี้ถูก mute rule ปิดเสียงไว้ ── */}
+        {ev.muted_by != null && (
+          <div role="note" style={{ fontSize: 12.5, padding: '10px 12px', borderRadius: 8, background: 'var(--row-head-bg)', border: '1px dashed var(--border)' }}>
+            ปิดเสียงโดยกฎ #{ev.muted_by} — บันทึกไว้แต่ไม่นับเป็น alert และไม่ส่ง webhook (ดู/ลบกฎได้ที่ ตั้งค่า → ระบบ)
+          </div>
+        )}
+
         {/* ── ส่วน Actions: Block & Quarantine IP, Export JSON ── */}
         <div>
           <div className="card-title" style={{ marginBottom: 'var(--space-2)' }}>Active Containment &amp; Actions</div>
@@ -285,8 +297,20 @@ export default function ThreatInspectModal({ event, onClose }) {
             </button>
             {/* Export JSON — ทุก role ทำได้ เป็นการ export ข้อมูลเพื่อการสืบสวน */}
             <button className="btn btn-secondary" onClick={handleExportJson}>Export JSON Evidence</button>
+            {/* Mute — admin เท่านั้น (backend ตรวจซ้ำ) */}
+            {!isGeneralView && (
+              <button className="btn btn-secondary" type="button" aria-expanded={showMute} onClick={() => { playSound('click'); setShowMute((v) => !v); }}>
+                {showMute ? 'ยกเลิกปิดเสียง' : 'ปิดเสียง alert แบบนี้…'}
+              </button>
+            )}
           </div>
+          {showMute && !isGeneralView && (
+            <div ref={muteRef} style={{ marginTop: 12, padding: 14, borderRadius: 10, border: '1px solid var(--border)' }}>
+              <MuteForm initial={{ source_ip: event.source_ip, attack_class: event.attack_class }} onCreated={() => {}} />
+            </div>
+          )}
         </div>
+        </div>{/* /dialog-body */}
       </div>
     </div>
   );

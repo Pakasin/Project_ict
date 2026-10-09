@@ -28,6 +28,7 @@ class LogEntry(BaseModel):
     bytes: int | None = None
     sensor: str | None = None
     mitre: str | None = None  # MITRE ATT&CK technique id ของ attack_class (None = ไม่มี mapping)
+    muted_by: int | None = None  # id ของ mute rule ที่ปิดเสียง event นี้ (มีค่า = ไม่นับเป็น alert)
 
 
 class LogsResponse(BaseModel):

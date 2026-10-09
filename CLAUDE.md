@@ -92,7 +92,9 @@ conn.execute("PRAGMA journal_mode=WAL")
 ```
 Schema uses no SQLite-specific types — designed for PostgreSQL migration.
 
-Tables: `prediction_events` (model output log) + `incident_status`, `audit_log`, `blocked_ips` (Incidents/Settings-Firewall state — previously `localStorage` only, now persisted so it survives across browsers/devices). All three live in `backend/db.py` alongside `prediction_events`.
+Tables: `prediction_events` (model output log) + `incident_status`, `audit_log`, `blocked_ips`, `mute_rules` (Incidents/Settings-Firewall state — previously `localStorage` only, now persisted so it survives across browsers/devices). All three live in `backend/db.py` alongside `prediction_events`.
+
+**Mute rules (`backend/routes/mute.py`, table `mute_rules`, `prediction_events.muted_by`)** — admin-only way to silence alerts known to be false. It weakens detection, so it is **safe by default and enforced server-side**: always expires (default 7 days, max 30; class-only rules max 7 — they blind the whole network to that class), needs an IP and/or attack class (never "everything"; IP must be a single address, exact match), needs a reason, every create/delete goes to `audit_log`. A muted event is **still stored** (`is_alert=0`, `muted_by=<rule id>`, "ปิดเสียง" tag in Logs, note in the event modal) but is not counted as an alert, not broadcast to `/ws/feed`, and does not trigger the webhook; `/api/stats` counts it in `totals.muted` (excluded from `events`/`alerts`/`normal`, so it can't pollute the charts). Matching happens in `internal.receive_event` via `db.find_active_mute`. UI: event modal ("ปิดเสียง alert แบบนี้…", pre-filled) and Settings → ระบบ & Sensor (list/delete). Tests: `tests/test_mute.py`. `frontend/vite.config.js` honours `VITE_BACKEND` so the UI can be pointed at an isolated backend with a throw-away DB when testing.
 
 ## Dashboard data
 

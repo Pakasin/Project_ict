@@ -384,6 +384,7 @@ export default function Dashboard() {
 
   // ── ตัวเลข Stat Cards: มาจาก /api/stats ตรงๆ (0 ถ้ายังไม่มีข้อมูล) ───────────
   const totalIncidents    = stats?.totals.alerts ?? 0
+  const mutedCount        = stats?.totals.muted ?? 0     // ถูก mute rule ปิดเสียง — ไม่รวมใน alert
   const criticalIncidents = stats?.by_severity.CRITICAL ?? 0
   const resolvedIncidents = stats?.totals.resolved ?? 0
 
@@ -529,7 +530,7 @@ export default function Dashboard() {
             เหตุการณ์ทั้งหมด
           </div>
           <div style={{ fontSize: 28, fontWeight: 800, color: 'var(--text)' }}>{totalIncidents}</div>
-          <div className="text-muted" style={{ fontSize: 11.5, marginTop: 5 }}>แจ้งเตือนใน{timeLabel}</div>
+          <div className="text-muted" style={{ fontSize: 11.5, marginTop: 5 }}>แจ้งเตือนใน{timeLabel}{mutedCount > 0 ? ` · ปิดเสียง ${mutedCount} (ไม่รวม)` : ''}</div>
         </div>
 
         {/* แจ้งเตือนวิกฤต — highlighted */}

@@ -88,7 +88,7 @@ app.add_middleware(
 )
 
 # --- Include Routers ---
-from backend.routes import auth, predict, internal, logs, ws, incidents, stats, system, mfa  # noqa: E402
+from backend.routes import auth, predict, internal, logs, ws, incidents, stats, system, mfa, mute  # noqa: E402
 
 app.include_router(auth.router)
 app.include_router(stats.router)
@@ -99,6 +99,7 @@ app.include_router(ws.router)
 app.include_router(incidents.router)
 app.include_router(system.router)
 app.include_router(mfa.router)
+app.include_router(mute.router)
 
 
 # --- Serve React static files (production) ---

@@ -15,7 +15,7 @@ import os
 
 from datetime import datetime
 
-from backend.db import save_prediction_event, touch_sensor, get_setting
+from backend.db import save_prediction_event, touch_sensor, get_setting, find_active_mute
 from backend.notify import notify_alert
 from backend.routes.ws import broadcast
 
@@ -119,6 +119,14 @@ async def receive_event(
     threshold = get_threshold(event.model_name)
     is_alert = event.confidence >= threshold
 
+    # mute rule (สร้างโดย admin, มีวันหมดอายุเสมอ): event ที่ตรงกฎยังถูกบันทึกไว้ตรวจย้อนหลัง
+    # แต่ไม่นับเป็น alert, ไม่ broadcast เข้า live feed และไม่ส่ง webhook
+    muted_by = None
+    if is_alert and event.attack_class.lower() not in ("normal", "benign"):
+        muted_by = find_active_mute(event.source_ip, event.attack_class, datetime.now().isoformat())
+        if muted_by is not None:
+            is_alert = False
+
     # บันทึกลง SQLite
     event_id = await save_prediction_event(
         model_name=event.model_name,
@@ -132,9 +140,13 @@ async def receive_event(
         protocol=event.protocol,
         bytes_=event.bytes,
         sensor=event.sensor,
+        muted_by=muted_by,
     )
     # event ก็นับเป็น heartbeat ของ sensor นั้น
     touch_sensor(event.sensor or f"{event.model_name}-sensor", datetime.now().isoformat())
+
+    if muted_by is not None:
+        return EventResponse(ok=True, event_id=event_id)
 
     # Broadcast ไปยัง dashboard clients ทุกตัว
     await broadcast({
