@@ -1236,10 +1236,10 @@ button { font: inherit; cursor: pointer; }
 .dialog.blueprint .corner {
   position: absolute; width: 16px; height: 16px; border: 2px solid var(--color-accent); opacity: .6;
 }
-.corner.tl { top: 8px; left: 8px; border-right: none; border-bottom: none; }
-.corner.tr { top: 8px; right: 8px; border-left: none; border-bottom: none; }
-.corner.bl { bottom: 8px; left: 8px; border-right: none; border-top: none; }
-.corner.br { bottom: 8px; right: 8px; border-left: none; border-top: none; }
+.dialog.blueprint .corner.tl { top: 8px; left: 8px; border-right: none; border-bottom: none; }
+.dialog.blueprint .corner.tr { top: 8px; right: 8px; border-left: none; border-bottom: none; }
+.dialog.blueprint .corner.bl { bottom: 8px; left: 8px; border-right: none; border-top: none; }
+.dialog.blueprint .corner.br { bottom: 8px; right: 8px; border-left: none; border-top: none; }
 
 .modal-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .modal-icon {
@@ -1505,3 +1505,13 @@ tr:hover .cell-filter, .cell-filter:focus-within { opacity: 1; }
 .filter-chip button:hover { background: var(--border); color: var(--text); }
 .filter-chips-clear { border: none; background: none; color: var(--blue); font-size: 12px; font-weight: 600; padding: 4px 6px; }
 .filter-chips-clear:hover { text-decoration: underline; }
+
+/* Logs filter grids: stack on narrow screens (inline 2-3 column grids clipped the selects at 390px) */
+.logs-filter-grid { display: grid; gap: 12px; }
+.logs-filter-grid-2 { grid-template-columns: 1fr 1fr; }
+.logs-filter-grid-3 { grid-template-columns: 2fr 1fr 1fr; }
+.logs-filter-grid > * { min-width: 0; }
+.logs-filter-grid select, .logs-filter-grid input { max-width: 100%; }
+@media (max-width: 640px) {
+  .logs-filter-grid-2, .logs-filter-grid-3 { grid-template-columns: 1fr; }
+}

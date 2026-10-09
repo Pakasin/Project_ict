@@ -548,7 +548,7 @@ export default function Logs() {
         </div>
 
         {/* Row 1 */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+        <div className="logs-filter-grid logs-filter-grid-2">
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             <label style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--text-tertiary)' }}>โหมดทั้งหมด</label>
             <select value={modelFilter} onChange={e => { setModelFilter(e.target.value); setPage(1) }}
@@ -572,7 +572,7 @@ export default function Logs() {
         </div>
 
         {/* Row 2 */}
-        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 12 }}>
+        <div className="logs-filter-grid logs-filter-grid-3">
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             <label style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--text-tertiary)' }}>ช่วงเวลา</label>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
