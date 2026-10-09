@@ -438,8 +438,6 @@ export default function Dashboard() {
   })
   const barPeak = Math.max(...barValues)
 
-  const sysCritical = criticalIncidents > 0
-
   // ── ส่งออกรายงานสรุป (CSV หลาย section) ────────────────────────────────────────
   function exportReport() {
     if (!stats) return
@@ -523,17 +521,7 @@ export default function Dashboard() {
       </div>
 
       {/* ── การ์ดสถิติสรุป ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 14 }}>
-        {/* สถานะระบบ */}
-        <div className="card elev-sm" style={{ padding: '18px 20px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 12.5, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 10 }}>
-            <span style={{ width: 8, height: 8, borderRadius: 999, background: '#4ade80', display: 'inline-block' }}></span>
-            สถานะระบบ
-          </div>
-          <div style={{ fontSize: 22, fontWeight: 800, color: apiError ? '#fb923c' : sysCritical ? '#f87171' : '#4ade80' }}>{apiError ? 'ไม่ทราบสถานะ' : sysCritical ? 'พบภัยคุกคาม' : 'ปลอดภัย'}</div>
-          <div className="text-muted" style={{ fontSize: 11.5, marginTop: 5 }}>{apiError ? 'ติดต่อ API ไม่ได้' : sysCritical ? `พบแจ้งเตือนวิกฤต ${criticalIncidents} รายการ` : `ไม่พบแจ้งเตือนวิกฤตใน${timeLabel}`}</div>
-        </div>
-
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 14 }}>
         {/* เหตุการณ์ทั้งหมด */}
         <div className="card elev-sm" style={{ padding: '18px 20px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 12.5, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 10 }}>
@@ -562,16 +550,6 @@ export default function Dashboard() {
           </div>
           <div style={{ fontSize: 28, fontWeight: 800, color: 'var(--text)' }}>{resolvedIncidents}</div>
           <div className="text-muted" style={{ fontSize: 11.5, marginTop: 5 }}>ใน{timeLabel}</div>
-        </div>
-
-        {/* สถานะโดยรวม */}
-        <div className="card elev-sm" style={{ padding: '18px 20px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 12.5, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 10 }}>
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fb923c" strokeWidth="2"><path d="M20.42 4.58a5.4 5.4 0 0 0-7.65 0l-.77.78-.77-.78a5.4 5.4 0 0 0-7.65 0C1.46 6.7 1.33 10.28 4 13l8 8 8-8c2.67-2.72 2.54-6.3.42-8.42z"></path></svg>
-            สถานะโดยรวม
-          </div>
-          <div style={{ fontSize: 22, fontWeight: 800, color: apiError ? '#f87171' : '#4ade80' }}>{apiError ? 'ออฟไลน์' : 'ออนไลน์'}</div>
-          <div className="text-muted" style={{ fontSize: 11.5, marginTop: 5 }}>{apiError ? 'เชื่อมต่อ backend ไม่ได้' : 'เชื่อมต่อ backend ได้'}</div>
         </div>
       </div>
 
