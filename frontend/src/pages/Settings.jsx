@@ -297,6 +297,8 @@ export default function Settings() {
                 </div>
               </div>
 
+              <MfaCard />
+
               <div className="card elev-sm" style={{ padding: '24px 28px' }}>
                 <h3 style={SECTION_TITLE}>รีเซ็ตรหัสผ่าน</h3>
                 <p style={SECTION_SUB}>เปลี่ยนรหัสผ่านของบัญชีผู้ใช้งาน (ต้องใช้งานผ่านระบบหลังบ้าน)</p>
@@ -491,6 +493,87 @@ export default function Settings() {
 
 // ── SystemPanel — สถานะ backend/โมเดล/Sensor จริง (/api/health) และ threshold ต่อโมเดล ──────────
 const MODEL_LABEL = { intrusion: 'Intrusion Model', flow: 'Flow Model', sqli: 'Injection Model (SQLi)' };
+
+// ── MFA (TOTP): เปิด/ปิดการยืนยันตัวตน 2 ขั้น — ทั้ง admin และ General User ──
+function MfaCard() {
+  const [st, setSt] = useState(null);          // { enabled, recovery_remaining }
+  const [setup, setSetup] = useState(null);    // { secret, uri } ระหว่างตั้งค่า
+  const [code, setCode] = useState('');
+  const [pw, setPw] = useState('');
+  const [codes, setCodes] = useState(null);    // recovery codes (แสดงครั้งเดียว)
+  const [msg, setMsg] = useState('');
+
+  const load = async () => {
+    try { setSt(await (await fetch('/api/mfa/status')).json()); } catch { setSt(null); }
+  };
+  useEffect(() => { load(); }, []);
+
+  const call = async (url, body) => {
+    setMsg('');
+    try {
+      const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) });
+      const d = await res.json();
+      if (!res.ok) { setMsg(d.detail || 'เกิดข้อผิดพลาด'); return null; }
+      return d;
+    } catch { setMsg('เชื่อมต่อเซิร์ฟเวอร์ไม่ได้'); return null; }
+  };
+
+  const start = async () => { const d = await call('/api/mfa/setup'); if (d) { setSetup(d); setCode(''); } };
+  const enable = async () => {
+    const d = await call('/api/mfa/enable', { code });
+    if (d) { setCodes(d.recovery_codes); setSetup(null); setCode(''); load(); }
+  };
+  const disable = async () => {
+    const d = await call('/api/mfa/disable', { password: pw, code });
+    if (d) { setPw(''); setCode(''); setCodes(null); load(); }
+  };
+
+  return (
+    <div className="card elev-sm" style={{ padding: '24px 28px' }}>
+      <h3 style={SECTION_TITLE}>การยืนยันตัวตนสองขั้น (MFA)</h3>
+      <p style={SECTION_SUB}>ใช้แอป Authenticator (Google Authenticator, Authy, 1Password) สร้างรหัส 6 หลักตอนเข้าสู่ระบบ</p>
+      {!st && <span className="text-muted" style={{ fontSize: 12.5 }}>โหลดสถานะไม่ได้</span>}
+
+      {st && !st.enabled && !setup && !codes && (
+        <button className="btn btn-primary" onClick={start}>เปิดใช้ MFA</button>
+      )}
+
+      {setup && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12, maxWidth: 460 }}>
+          <div style={{ fontSize: 13 }}>1. เพิ่มบัญชีในแอป Authenticator โดยกรอก secret นี้ (แบบ time-based)</div>
+          <code style={{ ...INPUT_STYLE, userSelect: 'all', letterSpacing: 1.5, wordBreak: 'break-all' }}>{setup.secret}</code>
+          <a href={setup.uri} style={{ fontSize: 12.5 }}>หรือเปิดลิงก์ otpauth:// (ถ้าอุปกรณ์นี้มีแอป)</a>
+          <div style={{ fontSize: 13 }}>2. กรอกรหัส 6 หลักที่แอปแสดงเพื่อยืนยัน</div>
+          <input style={INPUT_STYLE} inputMode="numeric" maxLength={6} placeholder="123456" value={code} onChange={e => setCode(e.target.value)} />
+          <div style={{ display: 'flex', gap: 10 }}>
+            <button className="btn btn-primary" onClick={enable} disabled={code.trim().length !== 6}>ยืนยันและเปิดใช้</button>
+            <button className="btn btn-outline" onClick={() => { setSetup(null); setMsg(''); }}>ยกเลิก</button>
+          </div>
+        </div>
+      )}
+
+      {codes && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, maxWidth: 460 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: '#4ade80' }}>เปิดใช้ MFA แล้ว</div>
+          <div style={{ fontSize: 12.5 }}>เก็บ recovery code เหล่านี้ไว้ที่ปลอดภัย — ใช้ได้ครั้งละ 1 code และจะไม่แสดงอีก</div>
+          <pre style={{ ...INPUT_STYLE, margin: 0, userSelect: 'all', lineHeight: 1.7 }}>{codes.join('\n')}</pre>
+          <button className="btn btn-outline" style={{ alignSelf: 'flex-start' }} onClick={() => setCodes(null)}>บันทึกไว้แล้ว</button>
+        </div>
+      )}
+
+      {st && st.enabled && !codes && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12, maxWidth: 400 }}>
+          <div style={{ fontSize: 13, color: '#4ade80', fontWeight: 600 }}>MFA เปิดใช้งานอยู่ · recovery code เหลือ {st.recovery_remaining}</div>
+          <div style={{ fontSize: 12.5 }} className="text-muted">ปิด MFA: ยืนยันด้วยรหัสผ่านและรหัส 6 หลัก (หรือ recovery code)</div>
+          <input style={INPUT_STYLE} type="password" placeholder="รหัสผ่าน" value={pw} onChange={e => setPw(e.target.value)} />
+          <input style={INPUT_STYLE} placeholder="รหัส 6 หลัก / recovery code" value={code} onChange={e => setCode(e.target.value)} />
+          <button className="btn btn-outline" style={{ alignSelf: 'flex-start' }} onClick={disable} disabled={!pw || !code.trim()}>ปิด MFA</button>
+        </div>
+      )}
+      {msg && <div style={{ fontSize: 12.5, color: 'var(--color-danger)', marginTop: 12 }}>{msg}</div>}
+    </div>
+  );
+}
 
 function SystemPanel({ isAdmin }) {
   const [health, setHealth] = useState(null);      // /api/health

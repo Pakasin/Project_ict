@@ -67,6 +67,15 @@ CREATE TABLE IF NOT EXISTS users (
     email         TEXT NOT NULL,
     created_at    TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS mfa (
+    -- TOTP MFA ต่อบัญชี (ทั้ง admin และ General User) — enabled=0 คือยังตั้งค่าไม่เสร็จ
+    username        TEXT PRIMARY KEY COLLATE NOCASE,
+    secret          TEXT NOT NULL,           -- base32 (ต้องเก็บแบบอ่านได้เพื่อคำนวณ TOTP)
+    enabled         INTEGER NOT NULL DEFAULT 0,
+    last_counter    INTEGER NOT NULL DEFAULT 0,  -- TOTP counter ล่าสุดที่ใช้ (กัน replay)
+    recovery_hashes TEXT NOT NULL DEFAULT '[]',  -- JSON list ของ sha256 recovery code ที่ยังไม่ใช้
+    created_at      TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS incident_meta (
     -- ข้อมูลเสริมของ incident: ผู้รับผิดชอบ
     event_id   INTEGER PRIMARY KEY,
@@ -599,5 +608,88 @@ def get_user(username: str) -> dict | None:
     try:
         row = conn.execute("SELECT * FROM users WHERE username = ?", (username,)).fetchone()
         return dict(row) if row else None
+    finally:
+        conn.close()
+
+
+# ── MFA (TOTP) ──────────────────────────────────────────────────────────────
+
+def get_mfa(username: str) -> dict | None:
+    conn = get_db()
+    try:
+        row = conn.execute("SELECT * FROM mfa WHERE username = ?", (username,)).fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
+
+
+def is_mfa_enabled(username: str) -> bool:
+    m = get_mfa(username)
+    return bool(m and m["enabled"])
+
+
+def set_mfa_pending(username: str, secret: str, created_at: str) -> None:
+    """เริ่ม/เริ่มใหม่ขั้นตั้งค่า (enabled=0) — ไม่ทับถ้า MFA เปิดอยู่แล้ว (ผู้เรียกต้องเช็กก่อน)"""
+    conn = get_db()
+    try:
+        conn.execute(
+            "INSERT INTO mfa (username, secret, enabled, last_counter, recovery_hashes, created_at) "
+            "VALUES (?, ?, 0, 0, '[]', ?) "
+            "ON CONFLICT(username) DO UPDATE SET secret=excluded.secret, enabled=0, last_counter=0, "
+            "recovery_hashes='[]', created_at=excluded.created_at",
+            (username, secret, created_at),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def enable_mfa(username: str, counter: int, recovery_hashes_json: str) -> None:
+    conn = get_db()
+    try:
+        conn.execute("UPDATE mfa SET enabled=1, last_counter=?, recovery_hashes=? WHERE username=?",
+                     (counter, recovery_hashes_json, username))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def update_mfa_counter(username: str, counter: int) -> bool:
+    """อัปเดต counter แบบ atomic — คืน False ถ้ามีคนใช้ counter นี้ไปแล้ว (กัน replay แบบแข่งกัน)"""
+    conn = get_db()
+    try:
+        cur = conn.execute("UPDATE mfa SET last_counter=? WHERE username=? AND last_counter<?",
+                           (counter, username, counter))
+        conn.commit()
+        return cur.rowcount == 1
+    finally:
+        conn.close()
+
+
+def consume_recovery_code(username: str, code_hash: str) -> bool:
+    """ใช้ recovery code (ครั้งเดียว) — คืน True ถ้าพบและลบออกแล้ว"""
+    import json
+    conn = get_db()
+    try:
+        row = conn.execute("SELECT recovery_hashes FROM mfa WHERE username=? AND enabled=1", (username,)).fetchone()
+        if not row:
+            return False
+        hashes = json.loads(row["recovery_hashes"])
+        if code_hash not in hashes:
+            return False
+        hashes.remove(code_hash)
+        cur = conn.execute("UPDATE mfa SET recovery_hashes=? WHERE username=? AND recovery_hashes=?",
+                           (json.dumps(hashes), username, row["recovery_hashes"]))
+        conn.commit()
+        return cur.rowcount == 1
+    finally:
+        conn.close()
+
+
+def delete_mfa(username: str) -> None:
+    conn = get_db()
+    try:
+        conn.execute("DELETE FROM mfa WHERE username=?", (username,))
+        conn.commit()
     finally:
         conn.close()

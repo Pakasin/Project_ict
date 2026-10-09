@@ -19,11 +19,14 @@ from pydantic import BaseModel
 
 from backend.auth.passwords import hash_password, verify_password
 from backend.auth.session import ROLE_ADMIN, ROLE_GENERAL, verify_credentials
-from backend.db import create_user, get_user
+from backend.auth import totp
+from backend.db import (consume_recovery_code, create_user, get_mfa, get_user, is_mfa_enabled,
+                        update_mfa_counter)
 
 router = APIRouter(prefix="/api", tags=["auth"])
 
 LOGIN_MAX_FAILS = 5          # ผิดได้กี่ครั้ง
+MFA_PENDING_TTL = 300.0      # มีเวลากรอกรหัส MFA กี่วินาทีหลังใส่รหัสผ่านถูก
 LOGIN_WINDOW = 300.0         # ... ภายในกี่วินาที ถึงจะถูกล็อก
 REGISTER_MAX_PER_HOUR = 10   # สมัครได้กี่บัญชีต่อ IP ต่อชั่วโมง
 
@@ -71,6 +74,11 @@ class AuthResponse(BaseModel):
     role: str | None = None
     profile: dict | None = None
     email: str | None = None
+    mfa_required: bool = False
+
+
+class MfaLoginRequest(BaseModel):
+    code: str
 
 
 def _user_response(message: str, username: str, role: str, user: dict | None = None) -> AuthResponse:
@@ -80,6 +88,50 @@ def _user_response(message: str, username: str, role: str, user: dict | None = N
         profile = {"name": user["name"], "lastname": user["lastname"], "phone": user["phone"]}
         email = user["email"]
     return AuthResponse(ok=True, message=message, username=username, role=role, profile=profile, email=email)
+
+
+def _complete_or_challenge(request: Request, username: str, role: str, user: dict | None) -> AuthResponse:
+    """รหัสผ่านถูกแล้ว — ถ้าเปิด MFA ให้รอรหัส TOTP (ยังไม่ออก session จริง) ไม่งั้น login เลย"""
+    request.session.clear()
+    if is_mfa_enabled(username):
+        request.session["mfa_pending"] = {"username": username, "role": role, "ts": time.time()}
+        return AuthResponse(ok=False, mfa_required=True, message="กรอกรหัสยืนยัน 6 หลักจากแอป Authenticator")
+    request.session.update({"username": username, "role": role})
+    return _user_response("เข้าสู่ระบบสำเร็จ", username, role, user)
+
+
+@router.post("/login/mfa", response_model=AuthResponse)
+async def login_mfa(body: MfaLoginRequest, request: Request):
+    """ขั้นที่ 2 ของ login: TOTP 6 หลัก หรือ recovery code (ใช้ได้ครั้งเดียว)"""
+    pending = request.session.get("mfa_pending")
+    if not pending or time.time() - pending.get("ts", 0) > MFA_PENDING_TTL:
+        request.session.clear()
+        return AuthResponse(ok=False, message="หมดเวลา กรุณาเข้าสู่ระบบใหม่")
+    username, role = pending["username"], pending["role"]
+
+    key = f"{_client_ip(request)}|{username.lower()}"
+    if len(_recent(_fails, key, LOGIN_WINDOW)) >= LOGIN_MAX_FAILS:
+        request.session.clear()
+        return AuthResponse(ok=False, message="พยายามผิดหลายครั้ง กรุณารอสักครู่แล้วลองใหม่")
+
+    m = get_mfa(username)
+    code = body.code.strip()
+    ok = False
+    if m and m["enabled"]:
+        counter = totp.verify_totp(m["secret"], code, m["last_counter"])
+        if counter is not None:
+            ok = update_mfa_counter(username, counter)
+        elif not code.isdigit():
+            ok = consume_recovery_code(username, totp.hash_recovery(code))
+    if not ok:
+        _fails.setdefault(key, []).append(time.monotonic())
+        return AuthResponse(ok=False, mfa_required=True, message="รหัสยืนยันไม่ถูกต้อง")
+
+    _fails.pop(key, None)
+    request.session.clear()
+    request.session.update({"username": username, "role": role})
+    user = get_user(username) if role == ROLE_GENERAL else None
+    return _user_response("เข้าสู่ระบบสำเร็จ", username, role, user)
 
 
 @router.post("/login", response_model=AuthResponse)
@@ -92,17 +144,13 @@ async def login(body: LoginRequest, request: Request):
 
     if verify_credentials(uname, body.password):
         _fails.pop(key, None)
-        request.session.clear()
-        request.session.update({"username": uname, "role": ROLE_ADMIN})
-        return _user_response("เข้าสู่ระบบสำเร็จ", uname, ROLE_ADMIN)
+        return _complete_or_challenge(request, uname, ROLE_ADMIN, None)
 
     user = get_user(uname)
     ok = verify_password(body.password, user["password_hash"] if user else _DUMMY_HASH) and user is not None
     if ok:
         _fails.pop(key, None)
-        request.session.clear()
-        request.session.update({"username": user["username"], "role": ROLE_GENERAL})
-        return _user_response("เข้าสู่ระบบสำเร็จ", user["username"], ROLE_GENERAL, user)
+        return _complete_or_challenge(request, user["username"], ROLE_GENERAL, user)
 
     _fails.setdefault(key, []).append(time.monotonic())
     return AuthResponse(ok=False, message="ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง")

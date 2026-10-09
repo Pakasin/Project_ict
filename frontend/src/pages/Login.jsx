@@ -24,6 +24,8 @@ export default function Login({ onLoginSuccess }) {
   const [loginUsername, setLoginUsername] = useState('')   // ช่อง Username
   const [loginPassword, setLoginPassword] = useState('')   // ช่อง Password
   const [showSigninPw, setShowSigninPw] = useState(false)  // toggle แสดง/ซ่อน password
+  const [mfaStep, setMfaStep] = useState(false)            // รหัสผ่านถูกแล้ว กำลังรอรหัส MFA
+  const [mfaCode, setMfaCode] = useState('')               // รหัส TOTP 6 หลัก หรือ recovery code
 
   // ── State ฟอร์ม Sign Up ──
   const [regUsername, setRegUsername] = useState('')       // ชื่อผู้ใช้ (username)
@@ -91,13 +93,10 @@ export default function Login({ onLoginSuccess }) {
       const data = await res.json()
 
       if (data.ok) {
-        playSound('success')
-        onLoginSuccess(
-          data.username,
-          data.role === 'admin' ? 'SOC Lead Operator' : 'General User',
-          data.email,
-          data.profile,
-        )
+        finishLogin(data)
+      } else if (data.mfa_required) {
+        setMfaStep(true)
+        setMfaCode('')
       } else {
         triggerShake(data.message || 'Invalid username or password')
       }
@@ -105,6 +104,42 @@ export default function Login({ onLoginSuccess }) {
       // กรณี network error (server ไม่รัน หรือ CORS)
       triggerShake('Connection failed. Please verify the server is running')
       console.error('Login error:', err)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  function finishLogin(data) {
+    playSound('success')
+    onLoginSuccess(
+      data.username,
+      data.role === 'admin' ? 'SOC Lead Operator' : 'General User',
+      data.email,
+      data.profile,
+    )
+  }
+
+  // ขั้นที่ 2: ส่งรหัส TOTP / recovery code ไปที่ POST /api/login/mfa
+  async function handleMfaSubmit(e) {
+    e.preventDefault()
+    if (!mfaCode.trim()) { triggerShake('Please enter the verification code'); return }
+    setLoading(true)
+    setError(null)
+    try {
+      const res = await fetch('/api/login/mfa', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: mfaCode.trim() }),
+      })
+      const data = await res.json()
+      if (data.ok) finishLogin(data)
+      else {
+        if (!data.mfa_required) { setMfaStep(false); setLoginPassword('') } // หมดเวลา/ถูกล็อก → เริ่มใหม่
+        triggerShake(data.message || 'Invalid verification code')
+      }
+    } catch (err) {
+      triggerShake('Connection failed. Please verify the server is running')
+      console.error('MFA error:', err)
     } finally {
       setLoading(false)
     }
@@ -231,7 +266,19 @@ export default function Login({ onLoginSuccess }) {
           {/* ─────────────────────────────────────────────────────────────────────
               หน้าล็อกอิน — ส่วนของฟอร์ม Sign In
           ───────────────────────────────────────────────────────────────────── */}
-          {authMode === 'signin' && (
+          {authMode === 'signin' && mfaStep && (
+            <form onSubmit={handleMfaSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+              <div className="field">
+                <label>Verification code</label>
+                <input className="input" inputMode="numeric" autoComplete="one-time-code" placeholder="123456 / recovery code"
+                  value={mfaCode} onChange={(e) => setMfaCode(e.target.value)} disabled={loading} autoFocus />
+              </div>
+              <div className="text-muted" style={{ fontSize: 12 }}>Enter the 6-digit code from your authenticator app, or a one-time recovery code.</div>
+              <button type="submit" className="btn btn-primary btn-block" disabled={loading}>{loading ? '...' : 'Verify'}</button>
+              <button type="button" className="btn btn-ghost btn-block" onClick={() => { setMfaStep(false); setLoginPassword(''); setError(null) }}>Back</button>
+            </form>
+          )}
+          {authMode === 'signin' && !mfaStep && (
             <form onSubmit={handleLoginSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
               {/* ช่อง Username */}
               <div className="field">
