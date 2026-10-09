@@ -30,6 +30,9 @@ class StatsData(BaseModel):
     by_model: list[CountItem]
     by_severity: dict[str, int]
     top_sources: list[CountItem]
+    top_targets: list[CountItem] = []
+    top_ports: list[CountItem] = []
+    by_protocol: list[CountItem] = []
     source_scope: dict[str, int]
     timeline: list[TimelineBucket]
 
@@ -42,7 +45,8 @@ class StatsResponse(BaseModel):
 @router.get("/stats", response_model=StatsResponse)
 async def get_stats(
     since: str | None = Query(default=None, description="ISO timestamp — นับเฉพาะ events at/after เวลานี้"),
+    until: str | None = Query(default=None, description="ISO timestamp — นับเฉพาะ events at/before เวลานี้"),
     bucket: int = Query(default=60, ge=1, le=1440, description="ความกว้าง bucket ของ timeline (นาที)"),
 ):
     """สถิติรวม: totals, by_class, by_model, by_severity, top_sources, source_scope, timeline"""
-    return StatsResponse(ok=True, data=get_event_stats(since=since, bucket_minutes=bucket))
+    return StatsResponse(ok=True, data=get_event_stats(since=since, bucket_minutes=bucket, until=until))

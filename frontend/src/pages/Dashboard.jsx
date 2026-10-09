@@ -9,10 +9,12 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useEffect, useState, useRef } from 'react'
+import { useNavigate } from 'react-router-dom'
 import InfoHelp from '../components/InfoHelp'
 import ThreatInspectModal from '../components/ThreatInspectModal'
 import { useApp } from '../context/AppContext'
 import { relativeTimeTh } from '../utils/time'
+import { useLiveEvents } from '../hooks/useLiveEvents'
 
 // ── Config ระดับความรุนแรง (Severity) ───────────────────────────────────────
 // ⚡ แก้ชื่อหรือสีที่นี่ → เห็นผลทันทีในตารางเหตุการณ์และตารางสุดท้าย
@@ -38,6 +40,37 @@ const STATUS_CONFIG = {
 function getSevKey(confidence) {
   // >= 0.95 → CRITICAL, >= 0.90 → HIGH, >= 0.80 → MEDIUM, < 0.80 → LOW
   return confidence >= 0.95 ? 'CRITICAL' : confidence >= 0.9 ? 'HIGH' : confidence >= 0.8 ? 'MEDIUM' : 'LOW'
+}
+
+// ค่า <input type="datetime-local"> = 'YYYY-MM-DDTHH:mm' เวลาท้องถิ่น
+const toInput = (d) => {
+  const p = (n) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`
+}
+
+// ── RankList — อันดับ Top-N แบบแท่งแนวนอน (Top sources / targets / ports / protocol) ───
+function RankList({ title, hint, items, color = '#f87171', mono = true, onClick, emptyText = 'ยังไม่มีข้อมูล' }) {
+  return (
+    <div className="card elev-sm" style={{ padding: '18px 20px' }}>
+      <div style={{ fontWeight: 700, fontSize: 13.5, marginBottom: 3 }}>{title}</div>
+      <div className="text-muted" style={{ fontSize: 11, marginBottom: 14 }}>{hint}</div>
+      {items.length === 0 ? (
+        <div className="text-muted" style={{ textAlign: 'center', padding: '24px 0', fontSize: 12.5 }}>{emptyText}</div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {items.map(({ key, count }) => (
+            <div key={key} onClick={onClick ? () => onClick(key) : undefined} style={{ display: 'flex', alignItems: 'center', gap: 12, cursor: onClick ? 'pointer' : 'default' }}>
+              <span style={{ fontFamily: mono ? 'monospace' : 'inherit', fontSize: 12.5, width: 130, flexShrink: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{key}</span>
+              <div style={{ flex: 1, height: 8, borderRadius: 999, background: 'var(--border-soft)', overflow: 'hidden' }}>
+                <div style={{ width: `${(count / items[0].count) * 100}%`, height: '100%', background: color }}></div>
+              </div>
+              <span style={{ fontWeight: 700, fontSize: 12.5, width: 44, textAlign: 'right' }}>{count}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
 }
 
 // ── Donut Chart — แสดงสัดส่วนระดับความรุนแรงแบบวงแหวน ─────────────────────────────────
@@ -267,14 +300,20 @@ function BellButton({ alerts = [] }) {
 
 // ── Main Dashboard ─────────────────────────────────────────────────────────────
 export default function Dashboard() {
-  const { t } = useApp()
+  const { t, auth } = useApp()
+  const navigate = useNavigate()
+  // drill-down: เปิดหน้า Logs พร้อม filter ที่ตรงกับสิ่งที่คลิก
+  const drill = (qs) => navigate(`/logs?${new URLSearchParams(qs)}`)
+  const [search, setSearch] = useState('')  // ค้นหาในตารางเหตุการณ์ล่าสุด (IP / ประเภท / โมเดล)
 
   // ── State Dropdown (ช่วงเวลา, หน่วยวัด, filter สรุป) ────────────────────────────
   // ⚡ เพิ่ม/ลบตัวเลือกใน Dropdown → ปาก dropdown เปลี่ยนทันที
   const [timeRange,     setTimeRange]     = useState('24h')  // ช่วงเวลาที่เลือก
   const [summaryFilter, setSummaryFilter] = useState('all')  // ตัวกรองตารางสรุป
+  const [customFrom, setCustomFrom] = useState(() => toInput(new Date(Date.now() - 86400e3))) // ช่วงกำหนดเอง: เริ่ม
+  const [customTo,   setCustomTo]   = useState(() => toInput(new Date()))                       // ช่วงกำหนดเอง: สิ้นสุด
 
-  const TIME_OPTIONS   = [{ key: '1h', label: '1 ชั่วโมง' }, { key: '24h', label: '24 ชั่วโมง' }, { key: '7d', label: '7 วัน' }, { key: '30d', label: '30 วัน' }]
+  const TIME_OPTIONS   = [{ key: '1h', label: '1 ชั่วโมง' }, { key: '24h', label: '24 ชั่วโมง' }, { key: '7d', label: '7 วัน' }, { key: '30d', label: '30 วัน' }, { key: 'custom', label: 'กำหนดเอง' }]
   const FILTER_OPTIONS = [{ key: 'all', label: 'ทั้งหมด' }, { key: 'critical', label: 'วิกฤต' }, { key: 'high', label: 'สูง' }, { key: 'medium', label: 'ปานกลาง' }, { key: 'low', label: 'ต่ำ' }]
 
   // ดึง label ปัจจุบันจาก state เพื่อแสดงในปุ่ม Dropdown
@@ -290,7 +329,15 @@ export default function Dashboard() {
 
   // timeRange → ช่วงเวลา (ms) และความกว้าง bucket ของ timeline (นาที)
   const RANGE_CFG = { '1h': { ms: 3600e3, bucket: 5 }, '24h': { ms: 86400e3, bucket: 120 }, '7d': { ms: 7 * 86400e3, bucket: 720 }, '30d': { ms: 30 * 86400e3, bucket: 2880 } }
-  const rangeCfg = RANGE_CFG[timeRange] || RANGE_CFG['24h']
+  const isCustom = timeRange === 'custom'
+  const customOk = isCustom && !!customFrom && !!customTo && new Date(customTo) > new Date(customFrom)
+  const customMs = customOk ? new Date(customTo) - new Date(customFrom) : 86400e3
+  // กำหนดเอง: bucket ให้ได้ ~48 จุดบนกราฟ (API รับ 1–1440 นาที)
+  const rangeCfg = isCustom
+    ? { ms: customMs, bucket: Math.min(1440, Math.max(1, Math.ceil(customMs / 60000 / 48))) }
+    : (RANGE_CFG[timeRange] || RANGE_CFG['24h'])
+  const winStart = isCustom ? new Date(customFrom).getTime() : Date.now() - rangeCfg.ms
+  const winEnd   = isCustom ? new Date(customTo).getTime() : null
 
   // sensors บันทึกเวลาเป็น local ISO ไม่มี timezone → ต้องส่ง since ในรูปแบบเดียวกัน
   function localIso(d) {
@@ -300,16 +347,21 @@ export default function Dashboard() {
 
   useEffect(() => {
     loadAll()
-    const id = setInterval(loadAll, 15000)  // refresh ทุก 15 วินาที
+    // ช่วงรีเฟรชจาก Settings > การแสดงผล (วินาที, ค่าเริ่มต้น 15) — event สดรีเฟรชทันทีผ่าน useLiveEvents อยู่แล้ว
+    let sec = 15
+    try { sec = Math.max(5, Number(localStorage.getItem('cybershield_refresh_interval')) || 15) } catch { /* ใช้ค่าเริ่มต้น */ }
+    const id = setInterval(loadAll, sec * 1000)
     return () => clearInterval(id)
-  }, [timeRange])
+  }, [timeRange, customFrom, customTo])
 
   async function loadAll() {
-    const since = encodeURIComponent(localIso(new Date(Date.now() - rangeCfg.ms)))
+    if (isCustom && !customOk) return  // ช่วงเวลาที่กำหนดยังไม่ถูกต้อง (สิ้นสุดต้องหลังเริ่มต้น)
+    const since = encodeURIComponent(localIso(new Date(winStart)))
+    const until = winEnd ? `&until=${encodeURIComponent(localIso(new Date(winEnd)))}` : ''
     try {
       const [sRes, lRes, stRes] = await Promise.all([
-        fetch(`/api/stats?since=${since}&bucket=${rangeCfg.bucket}`),
-        fetch(`/api/logs?limit=200&alerts_only=true&since=${since}`),
+        fetch(`/api/stats?since=${since}${until}&bucket=${rangeCfg.bucket}`),
+        fetch(`/api/logs?limit=200&alerts_only=true&since=${since}${until}`),
         fetch('/api/incidents/statuses'),
       ])
       const sData = await sRes.json()
@@ -324,19 +376,26 @@ export default function Dashboard() {
     }
   }
 
+  // event ใหม่จาก /ws/feed → รีเฟรชทันที (ช่วงกำหนดเองที่ผ่านมาแล้วไม่ต้อง)
+  useLiveEvents(() => loadAll(), { enabled: !isCustom })
+
   // ดึงสถานะของ event หนึ่ง — ถ้าไม่มีใน statusMap ใช้ 'OPEN' เป็นค่าเริ่มต้น
   function getStatus(item) { return statusMap[item.id] || 'OPEN' }
 
   // ── ตัวเลข Stat Cards: มาจาก /api/stats ตรงๆ (0 ถ้ายังไม่มีข้อมูล) ───────────
   const totalIncidents    = stats?.totals.alerts ?? 0
   const criticalIncidents = stats?.by_severity.CRITICAL ?? 0
-  const resolvedIncidents = incidents.filter(i => getStatus(i) === 'MITIGATED').length
+  const resolvedIncidents = stats?.totals.resolved ?? 0
 
   // เรียงจากใหม่ → เก่า และเอา 5 อันดับแรกเพื่อแสดงในตาราง
-  const latestIncidents = [...incidents]
+  const q = search.trim().toLowerCase()
+  const latestIncidents = incidents
+    .filter(i => summaryFilter === 'all' || getSevKey(i.confidence).toLowerCase() === summaryFilter)
+    .filter(i => !q || [i.source_ip, i.attack_class, i.model_name].some(v => String(v ?? '').toLowerCase().includes(q)))
     .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
     .slice(0, 5)
-  const latestAlerts = latestIncidents  // ใช้ใน BellButton
+  // BellButton: 5 รายการล่าสุดโดยไม่ผ่านตัวกรอง/ค้นหา
+  const latestAlerts = [...incidents].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)).slice(0, 5)
 
   // ── กราฟ events ตามเวลา (SVG line) จาก stats.timeline ─────────────────────
   const timeline = stats?.timeline ?? []
@@ -371,7 +430,7 @@ export default function Dashboard() {
 
   // แท่ง: แบ่ง timeRange เป็น 12 ช่วงเท่าๆ กัน นับ alerts ตามเวลา bucket
   const BAR_N = 12
-  const barStart = Date.now() - rangeCfg.ms
+  const barStart = winStart
   const barValues = Array(BAR_N).fill(0)
   timeline.forEach(b => {
     const idx = Math.min(BAR_N - 1, Math.max(0, Math.floor(((new Date(b.t).getTime() - barStart) / rangeCfg.ms) * BAR_N)))
@@ -381,8 +440,35 @@ export default function Dashboard() {
 
   const sysCritical = criticalIncidents > 0
 
+  // ── ส่งออกรายงานสรุป (CSV หลาย section) ────────────────────────────────────────
+  function exportReport() {
+    if (!stats) return
+    const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`
+    const sec = (title, header, rows) => ['', esc(title), header.map(esc).join(','), ...rows.map(r => r.map(esc).join(','))]
+    const lines = [
+      `${esc('CyberShield — รายงานสรุป')}`,
+      `${esc('ช่วงเวลา')},${esc(isCustom ? `${customFrom} ถึง ${customTo}` : timeLabel)}`,
+      `${esc('สร้างเมื่อ')},${esc(new Date().toISOString())}`,
+      ...sec('สรุป', ['รายการ', 'จำนวน'], [
+        ['เหตุการณ์ทั้งหมด', stats.totals.events], ['แจ้งเตือน', stats.totals.alerts],
+        ['ปกติ', stats.totals.normal], ['แก้ไขแล้ว', stats.totals.resolved ?? 0]]),
+      ...sec('ความรุนแรง', ['ระดับ', 'จำนวน'], Object.entries(stats.by_severity)),
+      ...sec('ประเภทการโจมตี', ['ประเภท', 'จำนวน'], stats.by_class.map(c => [c.key, c.count])),
+      ...sec('โมเดล/กฎที่ตรวจพบ', ['โมเดล', 'จำนวน'], stats.by_model.map(c => [c.key, c.count])),
+      ...sec('แหล่งโจมตีสูงสุด', ['IP', 'จำนวน'], stats.top_sources.map(c => [c.key, c.count])),
+      ...sec('เป้าหมายสูงสุด', ['IP', 'จำนวน'], (stats.top_targets ?? []).map(c => [c.key, c.count])),
+      ...sec('พอร์ตปลายทางสูงสุด', ['พอร์ต', 'จำนวน'], (stats.top_ports ?? []).map(c => [c.key, c.count])),
+      ...sec('โปรโตคอล', ['โปรโตคอล', 'จำนวน'], (stats.by_protocol ?? []).map(c => [c.key, c.count])),
+      ...sec('ไทม์ไลน์', ['เวลา', 'แจ้งเตือน', 'ปกติ'], stats.timeline.map(b => [b.t, b.alerts, b.normal])),
+    ]
+    const blob = new Blob(['\ufeff' + lines.join('\n')], { type: 'text/csv;charset=utf-8;' }) // BOM ให้ Excel อ่านภาษาไทยถูก
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'cybershield_report.csv'
+    document.body.appendChild(a); a.click(); document.body.removeChild(a)
+  }
+
   // ── Style helper: Dropdown trigger button (pill shape) ───────────────────────────
   // ใช้กับ spread operator: {...pillBtn(), extraStyle} เพื่อ override บางค่า
+  const inputStyle = { padding: '7px 10px', borderRadius: 10, border: '1px solid var(--border-soft)', background: 'var(--card-bg)', color: 'var(--text)', fontSize: 12.5 }
   const pillBtn = (active) => ({
     display: 'flex', alignItems: 'center', gap: 7, padding: '8px 14px', borderRadius: 10,
     border: '1px solid var(--border-soft)', background: 'var(--card-bg)', cursor: 'pointer',
@@ -395,14 +481,14 @@ export default function Dashboard() {
       {/* ── ส่วนหัวหน้า ── */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 16 }}>
         <div>
-          <h2 style={{ margin: '0 0 4px', fontSize: 24, fontWeight: 800 }}>ยินดีต้อนรับกลับ, admin 👋</h2>
+          <h2 style={{ margin: '0 0 4px', fontSize: 24, fontWeight: 800 }}>ยินดีต้อนรับกลับ, {auth?.user || 'admin'} 👋</h2>
           <p className="text-muted" style={{ margin: 0, fontSize: 13.5 }}>ภาพรวมสถานะความปลอดภัยของระบบและกิจกรรมล่าสุด</p>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           {/* ช่องค้นหา */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 14px', borderRadius: 10, border: '1px solid var(--border-soft)', background: 'var(--card-bg)', width: 260 }}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-            <input placeholder="ค้นหา IP, เหตุการณ์, หรือตั้งต่างๆ..." style={{ border: 'none', background: 'transparent', color: 'var(--text)', fontSize: 13, outline: 'none', width: '100%' }} />
+            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="ค้นหา IP, ประเภท, โมเดล..." style={{ border: 'none', background: 'transparent', color: 'var(--text)', fontSize: 13, outline: 'none', width: '100%' }} />
           </div>
 
           {/* Dropdown เลือกช่วงเวลา */}
@@ -418,6 +504,18 @@ export default function Dashboard() {
               </button>
             )}
           />
+
+          {isCustom && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <input type="datetime-local" value={customFrom} max={customTo} onChange={e => setCustomFrom(e.target.value)} style={{ ...inputStyle, borderColor: customOk ? 'var(--border-soft)' : '#f87171' }} />
+              <span className="text-muted">–</span>
+              <input type="datetime-local" value={customTo} min={customFrom} onChange={e => setCustomTo(e.target.value)} style={{ ...inputStyle, borderColor: customOk ? 'var(--border-soft)' : '#f87171' }} />
+            </div>
+          )}
+
+          {/* ส่งออกรายงาน */}
+          <button className="no-print" style={pillBtn()} onClick={exportReport} disabled={!stats} title="ดาวน์โหลดรายงานสรุปเป็น CSV">CSV</button>
+          <button className="no-print" style={pillBtn()} onClick={() => window.print()} title="พิมพ์ / บันทึกเป็น PDF">PDF</button>
 
           {/* ปุ่มกระดิ่งแจ้งเตือน */}
           <BellButton alerts={latestAlerts} />
@@ -549,7 +647,7 @@ export default function Dashboard() {
           {/* การ์ด 1: ประเภทเหตุการณ์ */}
           <div className="card elev-sm" style={{ padding: '18px 20px' }}>
             <div style={{ fontWeight: 700, fontSize: 13.5, marginBottom: 3 }}>ประเภทเหตุการณ์</div>
-            <div className="text-muted" style={{ fontSize: 11, marginBottom: 14 }}>สัดส่วนเหตุการณ์ที่ตรวจพบใน{timeLabel} แยกตามประเภทการโจมตีโจมตี</div>
+            <div className="text-muted" style={{ fontSize: 11, marginBottom: 14 }}>สัดส่วนเหตุการณ์ที่ตรวจพบใน{timeLabel} แยกตามประเภทการโจมตี</div>
             {classData.length === 0 ? (
             <div className="text-muted" style={{ textAlign: 'center', padding: '36px 0', fontSize: 12.5 }}>{apiError ? 'เชื่อมต่อ API ไม่ได้' : 'ยังไม่มีข้อมูล'}</div>
             ) : (<>
@@ -558,7 +656,7 @@ export default function Dashboard() {
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               {classData.map(({ color: c, label: l, value: v }) => (
-                <div key={l} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12.5, alignItems: 'center' }}>
+                <div key={l} onClick={() => drill({ attack_class: l })} title="ดูบันทึกเหตุการณ์ประเภทนี้" style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12.5, alignItems: 'center', cursor: 'pointer' }}>
                   <span style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
                     <span style={{ width: 9, height: 9, borderRadius: 3, background: c, display: 'inline-block', flexShrink: 0 }}></span>
                     {l}
@@ -629,12 +727,25 @@ export default function Dashboard() {
           </div>
         </div>
 
+        {/* ── Top-N: แหล่งโจมตี / เป้าหมาย / พอร์ต / โปรโตคอล (คลิก IP เพื่อดู Logs) ── */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 14 }}>
+          <RankList title="แหล่งโจมตีสูงสุด" hint={`10 IP ต้นทางที่ก่อเหตุมากที่สุดใน${timeLabel} (คลิกเพื่อดูบันทึก)`}
+            items={stats?.top_sources ?? []} onClick={(ip) => drill({ source_ip: ip })}
+            emptyText={apiError ? 'เชื่อมต่อ API ไม่ได้' : 'ยังไม่มีข้อมูล'} />
+          <RankList title="เป้าหมายสูงสุด" hint="IP ปลายทางที่ถูกโจมตีมากที่สุด" color="#fb923c"
+            items={stats?.top_targets ?? []} emptyText="ยังไม่มีข้อมูลปลายทาง (sensor ต้องส่ง dst_ip)" />
+          <RankList title="พอร์ตปลายทาง" hint="พอร์ตที่ถูกโจมตีมากที่สุด" color="#a78bfa" mono={false}
+            items={stats?.top_ports ?? []} emptyText="ยังไม่มีข้อมูลพอร์ต" />
+          <RankList title="โปรโตคอล" hint="สัดส่วนตามโปรโตคอลของเหตุการณ์ที่ตรวจพบ" color="#22d3ee" mono={false}
+            items={stats?.by_protocol ?? []} emptyText="ยังไม่มีข้อมูลโปรโตคอล" />
+        </div>
+
         {/* ── ตารางรายการเหตุการณ์ล่าสุด ── */}
         <div className="card elev-sm" style={{ padding: 0, overflow: 'hidden' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
             <thead>
               <tr style={{ borderBottom: '2px solid var(--border-soft)' }}>
-                {['เวลา', 'ประเภท', 'รายละเอียด', 'แหล่งที่มา', 'เป้าหมาย', 'ความรุนแรง', 'สถานะ'].map(h => (
+                {['เวลา', 'ประเภท', 'รายละเอียด', 'แหล่งที่มา', 'ความรุนแรง', 'สถานะ'].map(h => (
                   <th key={h} style={{ padding: '12px 16px', textAlign: 'left', fontSize: 11.5, fontWeight: 600, color: 'var(--text-tertiary)', whiteSpace: 'nowrap' }}>{h}</th>
                 ))}
               </tr>
@@ -655,7 +766,6 @@ export default function Dashboard() {
                     </td>
                     <td style={{ padding: '14px 16px', fontWeight: 500, color: 'var(--text)' }}>Confidence {(item.confidence * 100).toFixed(1)}% · ตรวจพบโดยโมเดล {item.model_name}</td>
                     <td style={{ padding: '14px 16px', fontFamily: 'monospace', fontSize: 12.5 }}>{item.source_ip}</td>
-                    <td style={{ padding: '14px 16px', fontFamily: 'monospace', fontSize: 12.5, color: 'var(--text-tertiary)' }}>—</td>
                     <td style={{ padding: '14px 16px' }}>
                       <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700, fontSize: 12.5, color: sev.color, whiteSpace: 'nowrap' }}>
                         <span style={{ width: 8, height: 8, borderRadius: 999, background: sev.color, display: 'inline-block', flexShrink: 0 }}></span>
@@ -668,8 +778,8 @@ export default function Dashboard() {
                   </tr>
                 )
               }) : (
-                <tr><td colSpan={7} className="text-muted" style={{ padding: '36px 16px', textAlign: 'center', fontSize: 13.5 }}>
-                  {apiError ? 'เชื่อมต่อ API ไม่ได้ — ไม่สามารถโหลดเหตุการณ์' : `ยังไม่มีเหตุการณ์ใน${timeLabel}`}
+                <tr><td colSpan={6} className="text-muted" style={{ padding: '36px 16px', textAlign: 'center', fontSize: 13.5 }}>
+                  {apiError ? 'เชื่อมต่อ API ไม่ได้ — ไม่สามารถโหลดเหตุการณ์' : (summaryFilter !== 'all' || q) ? 'ไม่พบเหตุการณ์ที่ตรงกับตัวกรอง' : `ยังไม่มีเหตุการณ์ใน${timeLabel}`}
                 </td></tr>
               )}
             </tbody>

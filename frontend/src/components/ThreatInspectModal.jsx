@@ -25,6 +25,41 @@ export default function ThreatInspectModal({ event, onClose }) {
   const [quarantined, setQuarantined] = useState(false);     // IP ถูก quarantine แล้วหรือยัง
   const [actionLoading, setActionLoading] = useState(false); // loading ระหว่างกด Block IP
   const [actionMessage, setActionMessage] = useState('');    // ข้อความผลลัพธ์หลังทำ action
+  const [detail, setDetail] = useState(null);                 // /api/events/{id}: event เต็ม + notes + assignee + related
+  const [noteText, setNoteText] = useState('');               // ข้อความบันทึกที่กำลังพิมพ์
+  const [assigneeText, setAssigneeText] = useState('');       // ผู้รับผิดชอบที่กำลังพิมพ์
+
+  // ── รายละเอียดเต็มของ event (dst/proto/bytes, บันทึก, ผู้รับผิดชอบ, events จาก IP เดียวกัน) ──
+  async function loadDetail() {
+    if (!event.id) return;
+    try {
+      const d = await (await fetch(`/api/events/${event.id}`)).json();
+      if (d.ok) { setDetail(d.data); setAssigneeText(d.data.assignee || ''); }
+    } catch { /* ไม่มี detail ก็แสดงเท่าที่มี */ }
+  }
+  useEffect(() => { loadDetail(); }, [event.id]);
+
+  async function postJson(url, method, body) {
+    const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    if (res.status === 401 || res.status === 403) { setActionMessage('ต้องเข้าสู่ระบบด้วยบัญชี admin'); return false; }
+    const d = await res.json();
+    if (!d.ok) setActionMessage(d.error || 'ดำเนินการไม่สำเร็จ');
+    return !!d.ok;
+  }
+
+  async function handleAddNote() {
+    if (isGeneralView || !noteText.trim()) return;
+    playSound('click');
+    if (await postJson(`/api/incidents/${event.id}/notes`, 'POST', { note: noteText })) { setNoteText(''); loadDetail(); }
+  }
+
+  async function handleAssign() {
+    if (isGeneralView) return;
+    playSound('click');
+    if (await postJson(`/api/incidents/${event.id}/assignee`, 'PUT', { assignee: assigneeText })) { setActionMessage('บันทึกผู้รับผิดชอบแล้ว'); loadDetail(); }
+  }
+
+  const ev = detail?.event || event;   // ใช้ข้อมูลจาก API เมื่อมี (มี dst/proto/bytes) ไม่งั้นใช้ที่ส่งมา
 
   // ── ตรวจสอบสถานะ Quarantine จาก API (SQLite blocked_ips table) ──
   // ใช้ข้อมูลจาก Server แทน localStorage เพื่อความสอดคล้องข้ามหน้าและข้ามอุปกรณ์
@@ -82,7 +117,7 @@ export default function ThreatInspectModal({ event, onClose }) {
   function handleExportJson() {
     playSound('click');
     // สร้าง data URL ของ JSON แล้วสร้าง <a> ชั่วคราวเพื่อ trigger download
-    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(event, null, 2));
+    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(detail ? { ...detail.event, assignee: detail.assignee, notes: detail.notes } : event, null, 2));
     const a = document.createElement('a');
     a.setAttribute('href', dataStr);
     a.setAttribute('download', `cybershield_event_${event.id || event.timestamp}.json`);
@@ -154,6 +189,61 @@ export default function ThreatInspectModal({ event, onClose }) {
             </span>
           </div>
         </div>
+
+        {/* ── รายละเอียดเครือข่าย (มีเมื่อ sensor ส่ง dst/proto/bytes มา) ── */}
+        {(ev.dst_ip || ev.dst_port != null || ev.protocol || ev.bytes != null || ev.sensor) && (
+          <div className="modal-details-grid">
+            {ev.dst_ip && <div className="detail-box"><span className="detail-label">Destination</span><span className="mono">{ev.dst_ip}{ev.dst_port != null ? `:${ev.dst_port}` : ''}</span></div>}
+            {ev.protocol && <div className="detail-box"><span className="detail-label">Protocol</span><span className="mono">{ev.protocol}</span></div>}
+            {ev.bytes != null && <div className="detail-box"><span className="detail-label">Bytes</span><span className="mono">{ev.bytes.toLocaleString()}</span></div>}
+            {ev.sensor && <div className="detail-box"><span className="detail-label">Sensor</span><span className="mono">{ev.sensor}</span></div>}
+          </div>
+        )}
+
+        {/* ── ผู้รับผิดชอบ + บันทึกของ operator ── */}
+        {detail && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div className="card-title">Assignee &amp; Notes</div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <input value={assigneeText} onChange={(e) => setAssigneeText(e.target.value)} disabled={isGeneralView}
+                placeholder="ผู้รับผิดชอบ (username)" style={{ flex: 1, padding: '7px 10px', borderRadius: 8, border: '1px solid var(--border-soft)', background: 'var(--card-bg)', color: 'var(--text)', fontSize: 13 }} />
+              <button className="btn btn-secondary" onClick={handleAssign} disabled={isGeneralView}>มอบหมาย</button>
+            </div>
+            {detail.notes.length === 0
+              ? <div className="text-muted" style={{ fontSize: 12.5 }}>ยังไม่มีบันทึก</div>
+              : detail.notes.map((n) => (
+                <div key={n.id} style={{ fontSize: 12.5, padding: '8px 10px', borderRadius: 8, background: 'var(--row-head-bg)' }}>
+                  <div className="text-muted" style={{ fontSize: 11, marginBottom: 2 }}>{n.username} · {formatTime(n.timestamp)}</div>
+                  <div style={{ whiteSpace: 'pre-wrap' }}>{n.note}</div>
+                </div>
+              ))}
+            {!isGeneralView && (
+              <div style={{ display: 'flex', gap: 8 }}>
+                <input value={noteText} onChange={(e) => setNoteText(e.target.value)} maxLength={2000}
+                  onKeyDown={(e) => { if (e.key === 'Enter') handleAddNote(); }}
+                  placeholder="เพิ่มบันทึก..." style={{ flex: 1, padding: '7px 10px', borderRadius: 8, border: '1px solid var(--border-soft)', background: 'var(--card-bg)', color: 'var(--text)', fontSize: 13 }} />
+                <button className="btn btn-secondary" onClick={handleAddNote} disabled={!noteText.trim()}>เพิ่ม</button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── เหตุการณ์อื่นจาก Source IP เดียวกัน ── */}
+        {detail && detail.related.length > 0 && (
+          <div>
+            <div className="card-title" style={{ marginBottom: 'var(--space-2)' }}>เหตุการณ์อื่นจาก {ev.source_ip} ({detail.related.length})</div>
+            <div style={{ maxHeight: 130, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
+              {detail.related.map((r) => (
+                <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, gap: 10 }}>
+                  <span className="mono">EVT-{r.id}</span>
+                  <span style={{ flex: 1 }}>{r.attack_class}</span>
+                  <span className="text-muted">{(r.confidence * 100).toFixed(0)}%</span>
+                  <span className="text-muted">{formatTime(r.timestamp)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* ── ส่วน Actions: Block & Quarantine IP, Export JSON ── */}
         <div>

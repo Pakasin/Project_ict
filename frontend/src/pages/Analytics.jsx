@@ -12,6 +12,13 @@ import { playSound } from '../utils/sound';
 import { useApp } from '../context/AppContext';
 import InfoHelp from '../components/InfoHelp';
 import { CONN_STATUS } from '../hooks/useConnectionStatus';
+import { useLiveEvents } from '../hooks/useLiveEvents';
+
+// ค่า <input type="datetime-local"> = 'YYYY-MM-DDTHH:mm' เวลาท้องถิ่น
+const toInput = (d) => {
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+};
 
 /**
  * Analytics — หน้าวิเคราะห์ภัยคุกคาม (Threat Analytics Dashboard)
@@ -25,6 +32,10 @@ export default function Analytics() {
 
   // timeRange: ช่วงเวลาที่เลือก ('24h' | '7d' | 'all') — ใช้สำหรับ filter กราฟในอนาคต
   const [timeRange, setTimeRange] = useState('24h');
+  const [customFrom, setCustomFrom] = useState(() => toInput(new Date(Date.now() - 86400e3))); // ช่วงกำหนดเอง: เริ่ม
+  const [customTo,   setCustomTo]   = useState(() => toInput(new Date()));                       // ช่วงกำหนดเอง: สิ้นสุด
+  const customOk = timeRange === 'custom' && !!customFrom && !!customTo && new Date(customTo) > new Date(customFrom);
+  const [mitre, setMitre] = useState([]); // /api/mitre: mapping class → technique
 
   // refreshKey: เพิ่มทุกครั้งที่กดรีเฟรช เพื่อ trigger re-fetch ข้อมูล
   const [refreshKey, setRefreshKey] = useState(0);
@@ -34,29 +45,43 @@ export default function Analytics() {
   const [modelInfo, setModelInfo] = useState(null);
   const [apiError, setApiError] = useState(false);
 
+  // sensors บันทึกเวลาแบบ local ISO ไม่มี timezone → ส่ง since/until ในรูปแบบเดียวกัน
+  const localIso = (d) => {
+    const p = (n) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+  };
+
+  async function loadStats(isCancelled = () => false) {
+    if (timeRange === 'custom' && !customOk) return; // ช่วงเวลายังไม่ถูกต้อง (สิ้นสุดต้องหลังเริ่มต้น)
+    const qs = new URLSearchParams({ bucket: '60' });
+    if (timeRange === 'custom') {
+      qs.set('since', localIso(new Date(customFrom))); qs.set('until', localIso(new Date(customTo)));
+    } else {
+      const spanMs = { '24h': 86400e3, '7d': 7 * 86400e3 }[timeRange];
+      if (spanMs) qs.set('since', localIso(new Date(Date.now() - spanMs)));
+    }
+    try {
+      const [sRes, mRes, tRes] = await Promise.all([fetch(`/api/stats?${qs}`), fetch('/api/model-info'), fetch('/api/mitre')]);
+      const sData = await sRes.json();
+      if (!sData.ok) throw new Error('stats');
+      let mData = null;
+      try { mData = await mRes.json(); } catch { /* model-info ไม่บังคับ */ }
+      try { const t = await tRes.json(); if (t.ok) setMitre(t.data); } catch { /* ใช้ค่าเดิม */ }
+      if (isCancelled()) return;
+      setStats(sData.data); setModelInfo(mData); setApiError(false);
+    } catch {
+      if (!isCancelled()) setApiError(true);
+    }
+  }
+
   useEffect(() => {
     let cancelled = false;
-    // sensors บันทึกเวลาแบบ local ISO ไม่มี timezone → ส่ง since ในรูปแบบเดียวกัน
-    const p = (n) => String(n).padStart(2, '0');
-    const localIso = (d) => `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
-    const spanMs = { '24h': 86400e3, '7d': 7 * 86400e3 }[timeRange];
-    const qs = new URLSearchParams({ bucket: '60' });
-    if (spanMs) qs.set('since', localIso(new Date(Date.now() - spanMs)));
-    (async () => {
-      try {
-        const [sRes, mRes] = await Promise.all([fetch(`/api/stats?${qs}`), fetch('/api/model-info')]);
-        const sData = await sRes.json();
-        if (!sData.ok) throw new Error('stats');
-        let mData = null;
-        try { mData = await mRes.json(); } catch { /* model-info ไม่บังคับ */ }
-        if (cancelled) return;
-        setStats(sData.data); setModelInfo(mData); setApiError(false);
-      } catch {
-        if (!cancelled) setApiError(true);
-      }
-    })();
+    loadStats(() => cancelled);
     return () => { cancelled = true; };
-  }, [timeRange, refreshKey]);
+  }, [timeRange, refreshKey, customFrom, customTo]);
+
+  // event ใหม่จาก /ws/feed → รีเฟรชสถิติอัตโนมัติ (ช่วงกำหนดเองที่ผ่านมาแล้วไม่ต้อง)
+  useLiveEvents(() => loadStats(), { enabled: timeRange !== 'custom' });
 
   /**
    * handleRefresh — รีเฟรชกราฟและข้อมูล (ทำงานเฉพาะเมื่อเชื่อมต่ออยู่)
@@ -72,6 +97,7 @@ export default function Analytics() {
   const CLASS_COLOR = { DoS: 'var(--red)', DDoS: 'var(--red)', BruteForce: 'var(--orange-text-mid)', SQLi: 'var(--yellow)', R2L: 'var(--yellow)', U2R: 'var(--blue)' };
   const displayTotal = stats?.totals.events ?? 0;
   const classCount = (k) => stats?.by_class.find(c => c.key === k)?.count ?? 0;
+  const classesCount = (ks) => ks.reduce((n, k) => n + classCount(k), 0);
   const spectrumRows = stats ? [
     { label: 'ปกติ / ไม่โจมตี', count: stats.totals.normal, color: 'var(--green)' },
     ...stats.by_class.map(c => ({ label: c.key, count: c.count, color: CLASS_COLOR[c.key] || 'var(--blue)' })),
@@ -106,13 +132,16 @@ export default function Analytics() {
   // ── ข้อมูลแผนที่ MITRE ATT&CK ──
   // จับคู่เทคนิคการโจมตีที่ตรวจพบกับขั้นตอนมาตรฐาน MITRE ATT&CK
   // ไม่มีแถว Reconnaissance/Port Scan — ไม่มีโมเดลหรือกฎตัวไหนตรวจจับได้ (ไม่แสดงของที่ตรวจไม่ได้)
-  const mitreRows = [
-    { tactic: 'การเข้าถึงเบื้องต้น', technique: 'โจมตีแบบใช้ช่องโหว่จากข้อมูล (SQLi)', tacticEn: 'Initial Access', techEn: 'T1190 Exploit Public-Facing Application', count: classCount('SQLi'), bg: 'var(--red-bg-strong)', fg: 'var(--red-text-strong)', icon: 'initial' },
-    { tactic: 'การเข้าถึงข้อมูล', technique: 'โจมตีแบบ Brute Force', tacticEn: 'Credential Access', techEn: 'T1110 Brute Force', count: classCount('BruteForce'), bg: 'var(--orange-bg)', fg: 'var(--orange-text-mid)', icon: 'credential' },
-    { tactic: 'การเคลื่อนที่ในระบบ', technique: 'Remote to Local (R2L)', tacticEn: 'Lateral Movement', techEn: 'T1021 Remote Services', count: classCount('R2L'), bg: 'var(--red-bg-strong)', fg: 'var(--red-text-strong)', icon: 'lateral' },
-    { tactic: 'การยกระดับสิทธิ์', technique: 'User to Root (U2R)', tacticEn: 'Privilege Escalation', techEn: 'T1068 Exploitation for Privilege Escalation', count: classCount('U2R'), bg: 'var(--red-bg-strong)', fg: 'var(--red-text-strong)', icon: 'privilege' },
-    { tactic: 'ผลกระทบ', technique: 'Network DoS (DDoS/DoS)', tacticEn: 'Impact', techEn: 'T1498 Network Denial of Service', count: classCount('DoS') + classCount('DDoS'), bg: 'var(--orange-bg)', fg: 'var(--orange-text-mid)', icon: 'impact' },
-  ];
+  const MITRE_COLOR = { // สีตามความรุนแรงของ tactic
+    T1190: ['var(--red-bg-strong)', 'var(--red-text-strong)'], T1110: ['var(--orange-bg)', 'var(--orange-text-mid)'],
+    T1021: ['var(--red-bg-strong)', 'var(--red-text-strong)'], T1068: ['var(--red-bg-strong)', 'var(--red-text-strong)'],
+    T1498: ['var(--orange-bg)', 'var(--orange-text-mid)'],
+  };
+  const mitreRows = mitre.map(m => ({
+    tactic: m.tactic_th, technique: m.label_th, tacticEn: m.tactic, techEn: `${m.id} ${m.name}`,
+    count: classesCount(m.classes), icon: m.icon,
+    bg: (MITRE_COLOR[m.id] || MITRE_COLOR.T1110)[0], fg: (MITRE_COLOR[m.id] || MITRE_COLOR.T1110)[1],
+  }));
 
   // ── ข้อมูลประสิทธิภาพโมเดล AI แต่ละตัว ──
   // แสดงในส่วน "ข้อมูลประสิทธิภาพโมเดล" ด้านล่าง เป็นการ์ด 3 ใบ (INTRUSION, FLOW, SQLI)
@@ -139,7 +168,7 @@ export default function Analytics() {
         </div>
         <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
           <div className="pill-tab-group" style={{ background: 'var(--gray-chip-bg)', borderRadius: 10, padding: 3, gap: 2 }}>
-            {[{ key: '24h', label: '24 ชั่วโมง' }, { key: '7d', label: '7 วัน' }, { key: 'all', label: 'ทั้งหมด' }].map(({ key, label }) => (
+            {[{ key: '24h', label: '24 ชั่วโมง' }, { key: '7d', label: '7 วัน' }, { key: 'all', label: 'ทั้งหมด' }, { key: 'custom', label: 'กำหนดเอง' }].map(({ key, label }) => (
               <button
                 key={key}
                 className="pill-tab"
@@ -160,6 +189,17 @@ export default function Analytics() {
               </button>
             ))}
           </div>
+          {timeRange === 'custom' && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              {[[customFrom, setCustomFrom, { max: customTo }], [customTo, setCustomTo, { min: customFrom }]].map(([val, set, lim], i) => (
+                <React.Fragment key={i}>
+                  {i === 1 && <span className="text-muted">–</span>}
+                  <input type="datetime-local" value={val} {...lim} onChange={e => set(e.target.value)}
+                    style={{ padding: '7px 10px', borderRadius: 10, border: `1px solid ${customOk ? 'var(--border-soft)' : '#f87171'}`, background: 'var(--card-bg)', color: 'var(--text)', fontSize: 12.5 }} />
+                </React.Fragment>
+              ))}
+            </div>
+          )}
           <button
             className="btn btn-outline"
             onClick={handleRefresh}

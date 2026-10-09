@@ -24,6 +24,7 @@ from backend.flow_features import (  # noqa: E402
     nfstream_flow_to_primitives, nfstream_flow_meta,
 )
 from backend.rate_rules import RateRuleDetector  # noqa: E402
+from backend.sensors.heartbeat import start_heartbeat  # noqa: E402
 
 WINDOW = 10
 
@@ -38,10 +39,12 @@ def main():
     ap.add_argument("--flow-thr", type=float, default=0.80)
     a = ap.parse_args()
 
+    PROTO = {1: "ICMP", 6: "TCP", 17: "UDP"}
     ev_url = a.backend.rstrip("/") + "/internal/event"
     pred_url = a.backend.rstrip("/") + "/api/predict"
     hdr = {"X-Internal-Token": a.token}
     sess = requests.Session()
+    start_heartbeat(a.backend, a.token, "lite", a.pcap_dir)
     import nfstream
 
     rr = RateRuleDetector()
@@ -52,11 +55,12 @@ def main():
     done = set()
     n_flows = 0
 
-    def post_event(model_name, attack_class, conf, src):
+    def post_event(model_name, attack_class, conf, src, dst_ip=None, dst_port=None, proto=None, nbytes=None):
         try:
             sess.post(ev_url, headers=hdr, timeout=3, json={
                 "model_name": model_name, "attack_class": attack_class,
-                "confidence": float(conf), "source_ip": src, "timestamp": now_iso()})
+                "confidence": float(conf), "source_ip": src, "timestamp": now_iso(),
+                "dst_ip": dst_ip, "dst_port": dst_port, "protocol": proto, "bytes": nbytes, "sensor": "lite"})
             print(f"  -> EVENT {model_name} {attack_class} {conf:.2f} src={src}", flush=True)
         except Exception as e:
             print(f"  !! event post failed: {e}", flush=True)
@@ -74,7 +78,7 @@ def main():
             prims = nfstream_flow_to_primitives(flow)
             end_s = float(flow.bidirectional_last_seen_ms) / 1000.0
             for al in rr.observe(end_s, src_ip, dst_ip, int(dst_port)):
-                post_event("flow_rules", al.attack_class, 1.0, al.source_ip)
+                post_event("flow_rules", al.attack_class, 1.0, al.source_ip, dst_ip, int(dst_port), PROTO.get(int(flow.protocol), str(flow.protocol)), int(flow.bidirectional_bytes))
             b = buf[src_ip]
             b.append((prims, float(start_ms), dst_ip, int(dst_port)))
             if len(b) == WINDOW and n_flows - last_pred.get(src_ip, -10**9) >= PRED_EVERY:
@@ -92,7 +96,7 @@ def main():
                     res = r.get("result") or {}
                     cls, conf = res.get("predicted_class"), res.get("confidence", 0.0)
                     if cls and cls != "BENIGN" and float(conf) >= a.flow_thr:
-                        post_event("flow", cls, conf, src_ip)
+                        post_event("flow", cls, conf, src_ip, dst_ip, int(dst_port), PROTO.get(int(flow.protocol), str(flow.protocol)), int(flow.bidirectional_bytes))
                 except Exception as e:
                     print(f"  !! predict failed: {e}", flush=True)
 

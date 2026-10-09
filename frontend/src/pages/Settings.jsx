@@ -169,6 +169,7 @@ export default function Settings() {
     { key: 'display',   label: 'การแสดงผล',        icon: 'M3 4h18v12H3zM8 20h8M12 16v4' },
     { key: 'connection',label: 'การเชื่อมต่อ',     icon: 'M12 3l9 16H3L12 3zM12 10v4M12 17h.01' },
     ...(isAdminActual ? [{ key: 'role',     label: 'บทบาท',      icon: 'M12 8a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM6 21v-2a6 6 0 0 1 12 0v2' }] : []),     // เฉพาะ admin จริง
+    ...(!isGeneralView ? [{ key: 'system',   label: 'ระบบ & Sensor', icon: 'M3 12h4l3-8 4 16 3-8h4' }] : []),
     ...(!isGeneralView ? [{ key: 'firewall', label: 'ไฟร์วอลล์', icon: 'M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6l7-3z' }] : []),               // ซ่อนจาก General User
   ];
 
@@ -434,21 +435,11 @@ export default function Settings() {
                   options={[{ value: 'admin', label: '🔑 ผู้ดูแลระบบ' }, { value: 'general', label: '👤 ผู้ใช้ทั่วไป' }]}
                   onChange={v => setPreviewAsGeneral(v === 'general')} />
               </SettingRow>
-              {!previewAsGeneral && (
-                <div style={{ marginTop: 20, padding: '18px 20px', borderRadius: 12, background: 'var(--row-head-bg)', border: '1px solid var(--border-soft)' }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 16, color: 'var(--text)' }}>ข้อมูลการใช้งาน</div>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 16 }}>
-                    {[['18', 'ผู้ใช้ที่ใช้งานอยู่'], ['3', 'สมัครใหม่วันนี้'], ['47', 'เซสชันทั้งหมด'], ['6m 12s', 'เวลาเซสชันเฉลี่ย']].map(([val, label]) => (
-                      <div key={label}>
-                        <div style={{ fontSize: 22, fontWeight: 800, color: 'var(--text)' }}>{val}</div>
-                        <div className="text-muted" style={{ fontSize: 11.5, marginTop: 3 }}>{label}</div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
             </div>
           )}
+
+          {/* System: สถานะ sensor + threshold */}
+          {category === 'system' && !isGeneralView && <SystemPanel isAdmin={isAdminActual && !isGeneralView} />}
 
           {/* Firewall */}
           {category === 'firewall' && !isGeneralView && (
@@ -491,6 +482,139 @@ export default function Settings() {
             </div>
           )}
 
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+// ── SystemPanel — สถานะ backend/โมเดล/Sensor จริง (/api/health) และ threshold ต่อโมเดล ──────────
+const MODEL_LABEL = { intrusion: 'Intrusion Model', flow: 'Flow Model', sqli: 'Injection Model (SQLi)' };
+
+function SystemPanel({ isAdmin }) {
+  const [health, setHealth] = useState(null);      // /api/health
+  const [healthErr, setHealthErr] = useState(false);
+  const [thr, setThr] = useState(null);            // { model: { value, default } }
+  const [draft, setDraft] = useState({});          // ค่าที่กำลังแก้ใน input
+  const [msg, setMsg] = useState('');
+  const [webhook, setWebhook] = useState('');     // URL webhook แจ้งเตือน (admin เท่านั้นที่อ่านได้)
+  const [hookMsg, setHookMsg] = useState('');
+
+  async function loadHealth() {
+    try {
+      const d = await (await fetch('/api/health')).json();
+      if (d.ok) { setHealth(d.data); setHealthErr(false); } else setHealthErr(true);
+    } catch { setHealthErr(true); }
+  }
+  async function loadThr() {
+    try {
+      const d = await (await fetch('/api/settings/thresholds')).json();
+      if (d.ok) { setThr(d.data); setDraft(Object.fromEntries(Object.entries(d.data).map(([m, v]) => [m, String(v.value)]))); }
+    } catch { /* แสดงเป็นว่าง */ }
+  }
+  async function loadWebhook() {
+    if (!isAdmin) return;
+    try {
+      const d = await (await fetch('/api/settings/notifications')).json();
+      if (d.ok) setWebhook(d.data.webhook_url);
+    } catch { /* ปล่อยว่าง */ }
+  }
+  async function saveWebhook(test = false) {
+    playSound('click');
+    try {
+      const url = test ? '/api/settings/notifications/test' : '/api/settings/notifications';
+      const res = await fetch(url, test ? { method: 'POST' } : { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ webhook_url: webhook }) });
+      if (res.status === 401 || res.status === 403) { setHookMsg('ต้องเข้าสู่ระบบด้วยบัญชี admin'); return; }
+      const d = await res.json();
+      setHookMsg(d.ok ? (test ? 'ส่งข้อความทดสอบแล้ว — ตรวจที่ปลายทาง' : 'บันทึกแล้ว') : (d.error || 'ไม่สำเร็จ'));
+    } catch { setHookMsg('เชื่อมต่อ API ไม่ได้'); }
+  }
+
+  useEffect(() => {
+    loadHealth(); loadThr(); loadWebhook();
+    const id = setInterval(loadHealth, 10000);
+    return () => clearInterval(id);
+  }, []);
+
+  async function saveThresholds() {
+    const body = {};
+    for (const [m, v] of Object.entries(draft)) {
+      const n = Number(v);
+      if (!(n > 0 && n <= 1)) { setMsg(`${MODEL_LABEL[m] || m}: ต้องเป็นตัวเลข 0–1`); return; }
+      body[m] = n;
+    }
+    playSound('click');
+    try {
+      const res = await fetch('/api/settings/thresholds', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ thresholds: body }) });
+      if (res.status === 401 || res.status === 403) { setMsg('ต้องเข้าสู่ระบบด้วยบัญชี admin'); return; }
+      const d = await res.json();
+      if (d.ok) { setMsg('บันทึกแล้ว — มีผลกับเหตุการณ์ถัดไปทันที'); playSound('success'); loadThr(); }
+      else setMsg(d.error || 'บันทึกไม่สำเร็จ');
+    } catch { setMsg('เชื่อมต่อ API ไม่ได้'); }
+  }
+
+  const dot = (ok) => <span style={{ width: 9, height: 9, borderRadius: 999, background: ok ? '#4ade80' : '#f87171', display: 'inline-block', marginRight: 8 }} />;
+  const row = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', borderBottom: '1px solid var(--border-soft)', fontSize: 13.5 };
+  const ago = (sec) => sec == null ? '—' : sec < 60 ? `${Math.round(sec)} วินาทีที่แล้ว` : sec < 3600 ? `${Math.round(sec / 60)} นาทีที่แล้ว` : `${Math.round(sec / 3600)} ชั่วโมงที่แล้ว`;
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div className="card elev-sm" style={{ padding: '24px 28px' }}>
+        <h3 style={SECTION_TITLE}>สถานะระบบ</h3>
+        <p style={SECTION_SUB}>ข้อมูลจริงจาก backend — รีเฟรชทุก 10 วินาที</p>
+        {healthErr && <div style={{ color: '#f87171', fontSize: 13 }}>เชื่อมต่อ API ไม่ได้</div>}
+        {health && (<>
+          <div style={row}><span>{dot(health.db)}ฐานข้อมูล (SQLite)</span><span className="text-muted">{health.db ? 'ปกติ' : 'ผิดปกติ'}</span></div>
+          {Object.entries(health.models).map(([m, ok]) => (
+            <div key={m} style={row}><span>{dot(ok)}{MODEL_LABEL[m] || m}</span><span className="text-muted">{ok ? 'โหลดแล้ว' : 'ยังไม่โหลด'}</span></div>
+          ))}
+        </>)}
+      </div>
+
+      <div className="card elev-sm" style={{ padding: '24px 28px' }}>
+        <h3 style={SECTION_TITLE}>Sensor</h3>
+        <p style={SECTION_SUB}>ถือว่า online ถ้าส่ง event หรือ heartbeat ภายใน {health?.online_window_seconds ?? 120} วินาที</p>
+        {health && health.sensors.length === 0 && (
+          <div className="text-muted" style={{ fontSize: 13, padding: '16px 0' }}>ยังไม่เคยได้รับสัญญาณจาก sensor ใดเลย — เริ่ม network_sensor / http_sensor / live_sensor_lite ก่อน</div>
+        )}
+        {health?.sensors.map((sn) => (
+          <div key={sn.sensor} style={row}>
+            <span>{dot(sn.online)}<strong>{sn.sensor}</strong>{sn.info ? <span className="text-muted"> · {sn.info}</span> : null}</span>
+            <span className="text-muted">{sn.online ? 'online' : 'offline'} · เห็นล่าสุด {ago(sn.age_seconds)}</span>
+          </div>
+        ))}
+      </div>
+
+      <div className="card elev-sm" style={{ padding: '24px 28px' }}>
+        <h3 style={SECTION_TITLE}>Threshold การแจ้งเตือน</h3>
+        <p style={SECTION_SUB}>ค่า confidence ขั้นต่ำที่ถือเป็น alert ของแต่ละโมเดล (มีผลกับเหตุการณ์ใหม่ที่ sensor ส่งเข้ามาทันที ไม่ต้อง restart)</p>
+        {thr && Object.entries(thr).map(([m, v]) => (
+          <div key={m} style={row}>
+            <span>{MODEL_LABEL[m] || m} <span className="text-muted" style={{ fontSize: 12 }}>(ค่าเริ่มต้น .env: {v.default})</span></span>
+            <input type="number" step="0.01" min="0.01" max="1" value={draft[m] ?? ''} disabled={!isAdmin}
+              onChange={(e) => setDraft((d) => ({ ...d, [m]: e.target.value }))}
+              style={{ ...INPUT_STYLE, width: 90, textAlign: 'right' }} />
+          </div>
+        ))}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 16 }}>
+          <button className="btn btn-primary" onClick={saveThresholds} disabled={!isAdmin || !thr}>บันทึก</button>
+          {!isAdmin && <span className="text-muted" style={{ fontSize: 12.5 }}>เฉพาะผู้ดูแลระบบ</span>}
+          {msg && <span style={{ fontSize: 12.5, color: 'var(--text-secondary)' }}>{msg}</span>}
+        </div>
+      </div>
+
+      <div className="card elev-sm" style={{ padding: '24px 28px' }}>
+        <h3 style={SECTION_TITLE}>แจ้งเตือนภายนอก (Webhook)</h3>
+        <p style={SECTION_SUB}>ส่ง alert ไป Slack / Discord / ระบบอื่นที่รับ JSON ทันทีที่ตรวจพบ (IP+ประเภทเดิมซ้ำไม่ส่งภายใน 60 วินาที)</p>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <input value={webhook} onChange={(e) => setWebhook(e.target.value)} disabled={!isAdmin} placeholder="https://hooks.slack.com/services/..."
+            style={{ ...INPUT_STYLE, flex: 1, minWidth: 260 }} />
+          <button className="btn btn-primary" onClick={() => saveWebhook(false)} disabled={!isAdmin}>บันทึก</button>
+          <button className="btn btn-outline" onClick={() => saveWebhook(true)} disabled={!isAdmin || !webhook}>ทดสอบส่ง</button>
+        </div>
+        <div style={{ marginTop: 10, fontSize: 12.5, color: 'var(--text-secondary)' }}>
+          {!isAdmin ? 'เฉพาะผู้ดูแลระบบ' : hookMsg || 'เว้นว่างแล้วบันทึกเพื่อปิดการแจ้งเตือน'}
         </div>
       </div>
     </div>

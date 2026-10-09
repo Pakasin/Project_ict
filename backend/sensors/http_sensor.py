@@ -18,6 +18,7 @@ from dotenv import load_dotenv
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 from backend.inference import predict_sqli  # noqa: E402
+from backend.sensors.heartbeat import start_heartbeat  # noqa: E402
 
 load_dotenv()
 
@@ -64,6 +65,11 @@ class SQLiAddon:
                         "confidence": confidence,
                         "source_ip": source_ip,
                         "timestamp": datetime.now().isoformat(),
+                        "dst_ip": flow.request.host,
+                        "dst_port": flow.request.port,
+                        "protocol": "HTTPS" if flow.request.scheme == "https" else "HTTP",
+                        "bytes": len(flow.request.raw_content or b""),
+                        "sensor": "http",
                     },
                     headers={"X-Internal-Token": INTERNAL_TOKEN},
                     timeout=2,
@@ -71,6 +77,8 @@ class SQLiAddon:
         except Exception as e:
             print(f"⚠️ SQLi detection error: {e}")
 
+
+start_heartbeat(INTERNAL_URL.rsplit("/internal/", 1)[0], INTERNAL_TOKEN, "http")
 
 # mitmproxy จะโหลด list นี้เป็น addons อัตโนมัติ
 addons = [SQLiAddon()]

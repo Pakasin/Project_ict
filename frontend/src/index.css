@@ -1422,3 +1422,11 @@ button { font: inherit; cursor: pointer; }
 .prob-row { display: flex; align-items: center; gap: 12px; }
 .prob-bar-bg { flex-grow: 1; height: 8px; border-radius: 999px; background: var(--border-soft); overflow: hidden; }
 .prob-bar-fill { height: 100%; border-radius: 999px; background: var(--blue); }
+
+
+/* พิมพ์ / บันทึก PDF จากหน้า Dashboard: ซ่อนเมนูข้างและปุ่มควบคุม */
+@media print {
+  .sidebar, aside, .no-print { display: none !important; }
+  .main-content { margin: 0 !important; padding: 0 !important; width: 100% !important; }
+  body { background: #fff !important; }
+}

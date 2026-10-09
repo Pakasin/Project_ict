@@ -15,6 +15,7 @@ import ThreatInspectModal from '../components/ThreatInspectModal';
 import InfoHelp from '../components/InfoHelp';
 import { useApp } from '../context/AppContext';
 import { CONN_STATUS } from '../hooks/useConnectionStatus';
+import { useLiveEvents } from '../hooks/useLiveEvents';
 
 const SEV_CONFIG = {
   CRITICAL: { label: 'วิกฤต', bg: 'rgba(239,68,68,.15)', color: '#f87171' },
@@ -527,6 +528,10 @@ export default function Incidents() {
   const [dateFilter,     setDateFilter]     = useState('');          // ISO prefix filter ('YYYY-MM-DD')
   const [page,           setPage]           = useState(1);           // หน้าปัจจุบัน
   const [updatingId,     setUpdatingId]     = useState(null);        // ID ที่กำลัง update (loading)
+  const [search,         setSearch]         = useState('');          // ค้นหา IP / ประเภท / โมเดล / ผู้รับผิดชอบ
+  const [assignees,      setAssignees]      = useState({});          // { event_id: username }
+  const [selected,       setSelected]       = useState(() => new Set()); // event id ที่ติ๊กเลือกไว้ (bulk action)
+  const [notice,         setNotice]         = useState('');          // ข้อความแจ้งผลการดำเนินการ/ข้อผิดพลาด
 
   const PAGE_SIZE = 10; // ❗ เปลี่ยนตรงนี้เพื่อปรับจำนวนรายการต่อหน้า
 
@@ -534,10 +539,22 @@ export default function Incidents() {
     fetchAlerts();
     fetchStatuses();
     fetchAuditLogs();
+    fetchAssignees();
   }, []);
 
-  async function fetchAlerts() {
-    setLoading(true); setLoadError(false);
+  // event ใหม่จาก /ws/feed → รีเฟรชรายการและสถานะอัตโนมัติ (ไม่ต้องกดซิงค์)
+  useLiveEvents(() => { fetchAlerts({ silent: true }); fetchStatuses(); fetchAssignees(); }, { enabled: liveEnabled });
+
+  async function fetchAssignees() {
+    try {
+      const data = await (await fetch('/api/incidents/assignees')).json();
+      if (data.ok) setAssignees(data.data);
+    } catch { }
+  }
+
+  async function fetchAlerts({ silent = false } = {}) {
+    if (!silent) setLoading(true);
+    setLoadError(false);
     try {
       const res = await fetch('/api/logs?limit=200&alerts_only=true');
       const data = await res.json();
@@ -582,13 +599,47 @@ export default function Incidents() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: newStatus, source_ip: sourceIp, action_name: actionName }),
       });
+      if (res.status === 401 || res.status === 403) { setNotice('ต้องเข้าสู่ระบบด้วยบัญชี admin จึงจะเปลี่ยนสถานะได้'); return; }
       const data = await res.json();
-      if (!data.ok) return;
+      if (!data.ok) { setNotice(data.error || 'เปลี่ยนสถานะไม่สำเร็จ'); return; }
+      setNotice('');
       setStatusMap((prev) => ({ ...prev, [eventId]: newStatus })); // อัปเดต local state ทันที
       if (newStatus === 'MITIGATED') playSound('success');          // เปิดเสียงเมื่อ block สำเร็จ
       fetchAuditLogs();  // reload audit log เพื่อเห็นบันทึกใหม่
     } catch { }
     finally { setUpdatingId(null); } // ซ่อน loading indicator
+  }
+
+  /** bulkUpdate — เปลี่ยนสถานะ incident ที่ติ๊กเลือกไว้ทั้งหมด (ทีละรายการตามลำดับ) */
+  async function bulkUpdate(newStatus, actionName) {
+    if (isGeneralView || selected.size === 0) return;
+    playSound('click');
+    let done = 0;
+    for (const id of selected) {
+      const item = incidents.find(i => i.id === id);
+      if (!item || getStatus(item) === newStatus) continue;
+      try {
+        const res = await fetch(`/api/incidents/${id}`, {
+          method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: newStatus, source_ip: item.source_ip, action_name: actionName }),
+        });
+        if (res.status === 401 || res.status === 403) { setNotice('ต้องเข้าสู่ระบบด้วยบัญชี admin จึงจะเปลี่ยนสถานะได้'); break; }
+        if ((await res.json()).ok) { done++; setStatusMap(prev => ({ ...prev, [id]: newStatus })); }
+      } catch { break; }
+    }
+    if (done > 0) { setNotice(`เปลี่ยนสถานะ ${done} รายการแล้ว`); playSound('success'); fetchAuditLogs(); }
+    setSelected(new Set());
+  }
+
+  /** exportCSV — ส่งออกรายการที่กรองอยู่ทั้งหมด (ไม่ใช่แค่หน้าปัจจุบัน) */
+  function exportCSV() {
+    playSound('click');
+    const headers = ['id', 'timestamp', 'severity', 'status', 'attack_class', 'model_name', 'confidence', 'source_ip', 'dst_ip', 'dst_port', 'protocol', 'assignee'];
+    const lines = filtered.map(i => [i.id, i.timestamp, getSev(i), getStatus(i), i.attack_class, i.model_name, i.confidence, i.source_ip, i.dst_ip, i.dst_port, i.protocol, assignees[i.id]]
+      .map(v => JSON.stringify(v ?? '')).join(','));
+    const blob = new Blob(['\ufeff' + [headers.join(','), ...lines].join('\n')], { type: 'text/csv;charset=utf-8;' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'cybershield_incidents.csv';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
   }
 
   /**
@@ -625,7 +676,10 @@ export default function Incidents() {
     const sevMatch = severityFilter === 'ALL' || getSev(item) === severityFilter;
     const typeMatch = typeFilter === 'ALL' || item.attack_class === typeFilter;
     const dateMatch = !dateFilter || item.timestamp.startsWith(dateFilter);
-    return stMatch && sevMatch && typeMatch && dateMatch;
+    const q = search.trim().toLowerCase();
+    const searchMatch = !q || [item.source_ip, item.dst_ip, item.attack_class, item.model_name, assignees[item.id], `evt-${item.id}`]
+      .some(v => String(v ?? '').toLowerCase().includes(q));
+    return stMatch && sevMatch && typeMatch && dateMatch && searchMatch;
   });
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
@@ -650,6 +704,13 @@ export default function Incidents() {
           <span style={{ marginLeft: 8 }}>ซิงค์ตัวแจ้งเตือน</span>
         </button>
       </div>
+
+      {notice && (
+        <div className="card" style={{ padding: '10px 18px', borderLeft: '3px solid var(--accent)', fontSize: 13.5, fontWeight: 600, display: 'flex', justifyContent: 'space-between' }}>
+          <span>{notice}</span>
+          <button onClick={() => setNotice('')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)' }}>×</button>
+        </div>
+      )}
 
       {loadError && (
         <div className="card" style={{ padding: '12px 18px', borderLeft: '3px solid #f87171', color: '#f87171', fontSize: 13.5, fontWeight: 600 }}>
@@ -735,7 +796,6 @@ export default function Incidents() {
         <div className="card elev-sm" style={{ padding: '22px 24px', display: 'flex', flexDirection: 'column', gap: 0 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
             <div className="card-title" style={{ fontSize: 14.5 }}>บันทึกการดำเนินการของผู้ปฏิบัติงาน</div>
-            <a href="#" style={{ fontSize: 12, color: 'var(--accent)', textDecoration: 'none', fontWeight: 600 }}>ดูทั้งหมด</a>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
             {auditLogs.map((log, i) => (
@@ -771,27 +831,46 @@ export default function Incidents() {
             </select>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'var(--row-head-bg)', padding: '8px 14px', borderRadius: 8, border: '1px solid var(--border-soft)' }}>
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-              <input placeholder="ค้นหา IP, เหตุการณ์, Sig..." style={{ border: 'none', background: 'transparent', color: 'var(--text)', outline: 'none', fontSize: 12, width: 170 }} />
+              <input value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} placeholder="ค้นหา IP, ประเภท, โมเดล, ผู้รับผิดชอบ..." style={{ border: 'none', background: 'transparent', color: 'var(--text)', outline: 'none', fontSize: 12, width: 170 }} />
             </div>
-            <button style={{ background: 'var(--row-head-bg)', border: '1px solid var(--border-soft)', borderRadius: 8, padding: '8px 12px', cursor: 'pointer', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center' }}>
+            <button onClick={exportCSV} disabled={filtered.length === 0} title="ส่งออกรายการที่กรองอยู่เป็น CSV" style={{ background: 'var(--row-head-bg)', border: '1px solid var(--border-soft)', borderRadius: 8, padding: '8px 12px', cursor: 'pointer', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center' }}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
             </button>
           </div>
         </div>
+
+        {/* แถบ bulk action (admin เท่านั้น) */}
+        {!isGeneralView && selected.size > 0 && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', borderRadius: 8, background: 'var(--row-head-bg)', fontSize: 13 }}>
+            <strong>เลือกแล้ว {selected.size} รายการ</strong>
+            <button className="btn btn-secondary" onClick={() => bulkUpdate('INVESTIGATING', STATUS_FLOW.OPEN.action)}>เริ่มตรวจสอบ</button>
+            <button className="btn btn-secondary" onClick={() => bulkUpdate('MITIGATED', STATUS_FLOW.INVESTIGATING.action)}>แก้ไข/กักกัน</button>
+            <button className="btn btn-outline" onClick={() => setSelected(new Set())}>ยกเลิก</button>
+          </div>
+        )}
 
         {/* เนื้อหาตาราง */}
         <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
             <thead>
               <tr style={{ borderBottom: '2px solid var(--border-soft)' }}>
-                {['เวลา','ระดับความรุนแรง','ประเภทเหตุการณ์','รายละเอียด','แหล่งที่มา','เป้าหมาย','สถานะ','การดำเนินการ'].map(h => (
+                {['__sel','เวลา','ระดับความรุนแรง','ประเภทเหตุการณ์','รายละเอียด','แหล่งที่มา','เป้าหมาย','สถานะ','ผู้รับผิดชอบ','การดำเนินการ'].map(h => (
                   <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11.5, fontWeight: 600, color: 'var(--text-tertiary)', whiteSpace: 'nowrap' }}>
-                    {h}{h === 'การดำเนินการ' ? ' ' : ''}{h === 'การดำเนินการ' && <InfoHelp id="incActions" />}
+                    {h === '__sel'
+                      ? <input type="checkbox" disabled={isGeneralView} title="เลือกทั้งหน้า"
+                          checked={paginated.length > 0 && paginated.every(i => selected.has(i.id))}
+                          onChange={e => setSelected(prev => { const n = new Set(prev); paginated.forEach(i => e.target.checked ? n.add(i.id) : n.delete(i.id)); return n; })} />
+                      : <>{h}{h === 'การดำเนินการ' ? ' ' : ''}{h === 'การดำเนินการ' && <InfoHelp id="incActions" />}</>}
                   </th>
                 ))}
               </tr>
             </thead>
             <tbody>
+              {paginated.length === 0 && (
+                <tr><td colSpan={10} className="text-muted" style={{ padding: '36px 16px', textAlign: 'center', fontSize: 13.5 }}>
+                  {loadError ? 'เชื่อมต่อ API ไม่ได้' : loading ? 'กำลังโหลด...' : incidents.length === 0 ? 'ยังไม่มีเหตุการณ์ที่ตรวจพบ' : 'ไม่พบเหตุการณ์ที่ตรงกับตัวกรอง'}
+                </td></tr>
+              )}
               {paginated.map((item, i) => {
                 const st = getStatus(item);
                 const sevKey = getSev(item);
@@ -803,6 +882,10 @@ export default function Incidents() {
                     onMouseEnter={e => e.currentTarget.style.background = 'var(--row-head-bg)'}
                     onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                     onClick={() => { playSound('click'); setSelectedEvent(item); }}>
+                    <td style={{ padding: '14px 14px', verticalAlign: 'middle' }} onClick={e => e.stopPropagation()}>
+                      <input type="checkbox" disabled={isGeneralView} checked={selected.has(item.id)}
+                        onChange={e => setSelected(prev => { const n = new Set(prev); e.target.checked ? n.add(item.id) : n.delete(item.id); return n; })} />
+                    </td>
                     <td style={{ padding: '14px 14px', verticalAlign: 'top' }}>
                       <div style={{ fontSize: 12.5, fontWeight: 600, whiteSpace: 'nowrap' }}>{formatTH(item.timestamp).split(' ').slice(0,2).join(' ')}</div>
                       <div style={{ fontSize: 11.5, fontWeight: 600, marginTop: 1, color: 'var(--text)' }}>{formatTH(item.timestamp).split(' ')[2]}</div>
@@ -813,17 +896,16 @@ export default function Incidents() {
                     </td>
                     <td style={{ padding: '14px 14px', verticalAlign: 'middle', fontWeight: 600, fontSize: 13 }}>{item.attack_class}</td>
                     <td style={{ padding: '14px 14px', verticalAlign: 'top', maxWidth: 200 }}>
-                      <div style={{ fontWeight: 600, fontSize: 13 }}>{item.description}</div>
-                      <div className="text-muted" style={{ fontSize: 11, marginTop: 2, fontStyle: 'italic' }}>{item.detail}</div>
+                      <div style={{ fontWeight: 600, fontSize: 13 }}>Confidence {(item.confidence * 100).toFixed(1)}%</div>
+                      <div className="text-muted" style={{ fontSize: 11, marginTop: 2, fontStyle: 'italic' }}>ตรวจพบโดย {item.model_name}{item.protocol ? ` · ${item.protocol}` : ''}</div>
                     </td>
                     <td style={{ padding: '14px 14px', verticalAlign: 'middle' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <span style={{ fontSize: 16 }}>{item.source_flag || '🌐'}</span>
                         <span className="mono" style={{ fontSize: 12.5 }}>{item.source_ip}</span>
                       </div>
                     </td>
                     <td style={{ padding: '14px 14px', verticalAlign: 'middle' }}>
-                      <span className="mono" style={{ fontSize: 12.5 }}>{item.target}</span>
+                      <span className="mono" style={{ fontSize: 12.5 }}>{item.dst_ip ? `${item.dst_ip}${item.dst_port != null ? ':' + item.dst_port : ''}` : '—'}</span>
                     </td>
                     <td style={{ padding: '14px 14px', verticalAlign: 'middle' }}>
                       <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, fontWeight: 600, background: statusCfg.dotBg, padding: '5px 10px', borderRadius: 999, width: 'fit-content' }}>
@@ -834,6 +916,7 @@ export default function Incidents() {
                         <span style={{ color: statusCfg.dot }}>{statusCfg.label}</span>
                       </span>
                     </td>
+                    <td style={{ padding: '14px 14px', verticalAlign: 'middle', fontSize: 12.5 }}>{assignees[item.id] || <span className="text-muted">—</span>}</td>
                     <td style={{ padding: '14px 14px', verticalAlign: 'middle' }} onClick={e => e.stopPropagation()}>
                       {/* ผู้ใช้ทั่วไปเห็นปุ่มแต่ถูกปิดการใช้งาน (disabled); Admin ทำงานได้ปกติ */}
                       <div style={{ display: 'flex', gap: 8 }}>

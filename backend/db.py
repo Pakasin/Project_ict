@@ -57,6 +57,42 @@ CREATE TABLE IF NOT EXISTS audit_log (
     target    TEXT NOT NULL,  -- เป้าหมาย เช่น "Ref #42 (192.168.1.1)"
     timestamp TEXT NOT NULL   -- เวลา ISO 8601
 );
+CREATE TABLE IF NOT EXISTS users (
+    -- บัญชี General User ที่สมัครเอง (admin อยู่ใน .env ไม่อยู่ที่นี่)
+    username      TEXT PRIMARY KEY COLLATE NOCASE,  -- ไม่แยกตัวพิมพ์เล็ก/ใหญ่
+    password_hash TEXT NOT NULL,   -- pbkdf2_sha256$iters$salt$hash (backend/auth/passwords.py)
+    name          TEXT NOT NULL,
+    lastname      TEXT NOT NULL,
+    phone         TEXT NOT NULL,
+    email         TEXT NOT NULL,
+    created_at    TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS incident_meta (
+    -- ข้อมูลเสริมของ incident: ผู้รับผิดชอบ
+    event_id   INTEGER PRIMARY KEY,
+    assignee   TEXT,
+    updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS incident_notes (
+    -- บันทึกของ operator ต่อ incident
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_id  INTEGER NOT NULL,
+    username  TEXT NOT NULL,
+    note      TEXT NOT NULL,
+    timestamp TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_notes_event ON incident_notes (event_id);
+CREATE TABLE IF NOT EXISTS app_settings (
+    -- ค่าตั้งค่าที่แก้ผ่าน UI (เช่น threshold ต่อโมเดล) — override ค่าจาก .env
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS sensor_heartbeat (
+    -- sensor ส่ง heartbeat / event ล่าสุดเมื่อไร (ใช้แสดงสุขภาพ sensor)
+    sensor    TEXT PRIMARY KEY,
+    last_seen TEXT NOT NULL,
+    info      TEXT
+);
 CREATE TABLE IF NOT EXISTS blocked_ips (
     -- รายการ IP ที่ถูก quarantine (block) โดย operator
     ip         TEXT PRIMARY KEY,  -- IP address (unique, ซ้ำไม่ได้)
@@ -90,6 +126,12 @@ def init_db() -> None:
     conn = get_db()
     try:
         conn.executescript(CREATE_TABLE_SQL + CREATE_INDEX_SQL + CREATE_INCIDENTS_SQL)
+        # migration: คอลัมน์ที่เพิ่มทีหลัง (ฐานข้อมูลเก่าไม่มี) — nullable จึงเพิ่มได้ปลอดภัย
+        have = {r["name"] for r in conn.execute("PRAGMA table_info(prediction_events)")}
+        for col, typ in (("dst_ip", "TEXT"), ("dst_port", "INTEGER"), ("protocol", "TEXT"),
+                         ("bytes", "INTEGER"), ("sensor", "TEXT")):
+            if col not in have:
+                conn.execute(f"ALTER TABLE prediction_events ADD COLUMN {col} {typ}")
         conn.commit()
     finally:
         conn.close()
@@ -102,71 +144,109 @@ async def save_prediction_event(
     source_ip: str,     # IP ต้นทาง (จาก network packet หรือ HTTP request)
     timestamp: str,     # เวลา ISO 8601 ที่ตรวจพบ
     is_alert: bool = False,  # True ถ้า confidence >= threshold (กำหนดใน internal.py)
+    dst_ip: str | None = None,
+    dst_port: int | None = None,
+    protocol: str | None = None,
+    bytes_: int | None = None,
+    sensor: str | None = None,
 ) -> int:
     """บันทึก Prediction Event ลง SQLite แล้วคืน row id ของแถวที่เพิ่งบันทึก
 
-    เรียกจาก internal.py (sensor events) และสามารถเรียกจากที่อื่นได้
-    เป็น async เพื่อให้ FastAPI ไม่ blocking ระหว่างรอ I/O
+    dst_ip/dst_port/protocol/bytes/sensor เป็น optional (sensor รุ่นเก่าไม่ส่งมา)
     """
     conn = get_db()
     try:
         cursor = conn.execute(
             """
             INSERT INTO prediction_events
-                (model_name, attack_class, confidence, source_ip, timestamp, is_alert)
-            VALUES (?, ?, ?, ?, ?, ?)
+                (model_name, attack_class, confidence, source_ip, timestamp, is_alert,
+                 dst_ip, dst_port, protocol, bytes, sensor)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            # int(is_alert) แปลง True/False → 1/0 เพราะ SQLite ไม่มี boolean type
-            (model_name, attack_class, confidence, source_ip, timestamp, int(is_alert)),
+            (model_name, attack_class, confidence, source_ip, timestamp, int(is_alert),
+             dst_ip, dst_port, protocol, bytes_, sensor),
         )
-        conn.commit()              # บันทึกลงดิสก์จริง
-        return cursor.lastrowid   # คืน id ของแถวใหม่ — ใช้ broadcast ใน ws.py
+        conn.commit()
+        return cursor.lastrowid
     finally:
-        conn.close()  # ปิด connection ทุกกรณี (ทั้ง success และ exception)
+        conn.close()
+
+
+# ช่วง confidence ของแต่ละ severity — ต้องตรง _severity_band และ getSevKey ใน frontend
+SEVERITY_RANGE = {"CRITICAL": (0.95, 1.0001), "HIGH": (0.90, 0.95), "MEDIUM": (0.80, 0.90), "LOW": (0.0, 0.80)}
+
+
+def _events_where(
+    model_name: str | None,
+    attack_class: str | None,
+    alerts_only: bool,
+    since: str | None,
+    until: str | None,
+    source_ip: str | None,
+    q: str | None,
+    severity: str | None = None,
+    status: str | None = None,
+) -> tuple[str, list]:
+    """สร้าง WHERE clause (parameterized) ที่ใช้ร่วมกันระหว่างดึงรายการและนับ total"""
+    where = " WHERE 1=1"
+    params: list = []
+    if model_name:
+        where += " AND model_name = ?"
+        params.append(model_name)
+    if attack_class:
+        where += " AND attack_class = ?"
+        params.append(attack_class)
+    if alerts_only:
+        where += " AND is_alert = 1"
+    if since:
+        where += " AND timestamp >= ?"
+        params.append(since)
+    if until:
+        where += " AND timestamp <= ?"
+        params.append(until)
+    if source_ip:
+        where += " AND source_ip LIKE ?"
+        params.append(f"%{source_ip}%")
+    if q:
+        where += " AND (source_ip LIKE ? OR attack_class LIKE ? OR model_name LIKE ? OR id = ?)"
+        # "EVT-42" หรือ "42" = ค้นด้วยรหัสอ้างอิง (ตรง ref ที่ frontend แสดง)
+        ref = q.upper().removeprefix("EVT-")
+        params.extend([f"%{q}%"] * 3 + [int(ref) if ref.isdigit() else -1])
+    if severity in SEVERITY_RANGE:
+        lo, hi = SEVERITY_RANGE[severity]
+        where += " AND confidence >= ? AND confidence < ?"
+        params.extend([lo, hi])
+    if status == "OPEN":
+        where += " AND id NOT IN (SELECT event_id FROM incident_status WHERE status != 'OPEN')"
+    elif status in ("INVESTIGATING", "MITIGATED"):
+        where += " AND id IN (SELECT event_id FROM incident_status WHERE status = ?)"
+        params.append(status)
+    return where, params
 
 
 def get_prediction_events(
-    limit: int = 100,          # จำนวน rows สูงสุดที่ดึง (ป้องกัน response ใหญ่เกินไป)
-    offset: int = 0,           # ข้าม rows แรก offset ตัว (สำหรับ pagination)
-    model_name: str | None = None,     # กรอง เฉพาะ model นี้ (None = ทุก model)
-    attack_class: str | None = None,   # กรองเฉพาะ class นี้ (None = ทุก class)
-    alerts_only: bool = False,         # True = เฉพาะ is_alert=1 (confidence >= threshold)
-    since: str | None = None,          # กรองเฉพาะ events หลังจากเวลานี้ (ISO timestamp)
-) -> list[dict]:
-    """ดึง Prediction Events จาก SQLite พร้อม filters และ pagination
-
-    ใช้ dynamic SQL query สร้าง WHERE clause ตาม filter ที่ระบุ
-    ถ้าไม่ระบุ filter ไหนเลย จะดึง events ทั้งหมด (ตาม limit)
-    """
+    limit: int = 100,
+    offset: int = 0,
+    model_name: str | None = None,
+    attack_class: str | None = None,
+    alerts_only: bool = False,
+    since: str | None = None,
+    until: str | None = None,
+    source_ip: str | None = None,
+    q: str | None = None,
+    severity: str | None = None,
+    status: str | None = None,
+) -> tuple[list[dict], int]:
+    """ดึง Prediction Events (ใหม่→เก่า) พร้อม filters/pagination คืน (rows, total ที่ตรง filter)"""
+    where, params = _events_where(model_name, attack_class, alerts_only, since, until, source_ip, q, severity, status)
     conn = get_db()
     try:
-        # เริ่มจาก WHERE 1=1 เพื่อให้เพิ่ม AND condition ได้สะดวก
-        # (ถ้าไม่มี WHERE 1=1 ต้องเช็คว่า condition แรกยังไม่มีก่อนจะใส่ WHERE)
-        query = "SELECT * FROM prediction_events WHERE 1=1"
-        params: list = []  # list ของ parameter สำหรับ parameterized query (ป้องกัน SQL injection)
-
-        # เพิ่ม filter ตาม argument ที่ระบุมา
-        if model_name:
-            query += " AND model_name = ?"  # ? = placeholder ปลอดภัยจาก injection
-            params.append(model_name)
-        if attack_class:
-            query += " AND attack_class = ?"
-            params.append(attack_class)
-        if alerts_only:
-            query += " AND is_alert = 1"  # 1 = True ใน SQLite
-        if since:
-            # ดึงเฉพาะ events ที่เกิดขึ้นหลังจาก timestamp นี้
-            # ใช้ >= เพื่อรวมเหตุการณ์ที่เกิดพอดีกับเวลา since ด้วย
-            query += " AND timestamp >= ?"
-            params.append(since)
-
-        # เรียงลำดับจากใหม่ → เก่า และกำหนด limit/offset สำหรับ pagination
-        query += " ORDER BY timestamp DESC LIMIT ? OFFSET ?"
-        params.extend([limit, offset])
-
-        rows = conn.execute(query, params).fetchall()
-        # แปลง sqlite3.Row → dict ธรรมดา เพื่อให้ serialize เป็น JSON ได้
-        return [dict(row) for row in rows]
+        total = conn.execute("SELECT COUNT(*) FROM prediction_events" + where, params).fetchone()[0]
+        rows = conn.execute(
+            "SELECT * FROM prediction_events" + where + " ORDER BY timestamp DESC LIMIT ? OFFSET ?",
+            [*params, limit, offset],
+        ).fetchall()
+        return [dict(row) for row in rows], total
     finally:
         conn.close()
 
@@ -194,7 +274,7 @@ def _is_private_ip(ip: str) -> bool | None:
         return None
 
 
-def get_event_stats(since: str | None = None, bucket_minutes: int = 60) -> dict:
+def get_event_stats(since: str | None = None, bucket_minutes: int = 60, until: str | None = None) -> dict:
     """สรุปสถิติ prediction_events สำหรับ Dashboard/Analytics
 
     Query แบบ portable (SELECT ธรรมดา) แล้วรวมยอดใน Python เพื่อให้ migrate PostgreSQL ได้
@@ -205,14 +285,19 @@ def get_event_stats(since: str | None = None, bucket_minutes: int = 60) -> dict:
 
     conn = get_db()
     try:
-        query = ("SELECT model_name, attack_class, confidence, source_ip, timestamp, is_alert "
+        query = ("SELECT id, model_name, attack_class, confidence, source_ip, timestamp, is_alert, dst_ip, dst_port, protocol "
                  "FROM prediction_events WHERE 1=1")
         params: list = []
         if since:
             query += " AND timestamp >= ?"
             params.append(since)
+        if until:
+            query += " AND timestamp <= ?"
+            params.append(until)
         query += " ORDER BY timestamp ASC LIMIT 200000"
         rows = conn.execute(query, params).fetchall()
+        mitigated = {r["event_id"] for r in conn.execute(
+            "SELECT event_id FROM incident_status WHERE status = 'MITIGATED'").fetchall()}
     finally:
         conn.close()
 
@@ -221,8 +306,11 @@ def get_event_stats(since: str | None = None, bucket_minutes: int = 60) -> dict:
     by_severity: Counter = Counter()
     top_sources: Counter = Counter()
     scope: Counter = Counter()
+    top_targets: Counter = Counter()
+    top_ports: Counter = Counter()
+    by_protocol: Counter = Counter()
     buckets: dict[str, dict] = {}
-    total = alerts = 0
+    total = alerts = resolved = 0
     step = timedelta(minutes=max(1, bucket_minutes))
 
     for r in rows:
@@ -243,10 +331,18 @@ def get_event_stats(since: str | None = None, bucket_minutes: int = 60) -> dict:
         if not is_attack:
             continue
         alerts += 1
+        if r["id"] in mitigated:
+            resolved += 1
         by_class[r["attack_class"]] += 1
         by_model[r["model_name"]] += 1
         by_severity[_severity_band(r["confidence"])] += 1
         top_sources[r["source_ip"]] += 1
+        if r["dst_ip"]:
+            top_targets[r["dst_ip"]] += 1
+        if r["dst_port"] is not None:
+            top_ports[str(r["dst_port"])] += 1
+        if r["protocol"]:
+            by_protocol[r["protocol"]] += 1
         private = _is_private_ip(r["source_ip"])
         scope["internal" if private else "unknown" if private is None else "external"] += 1
 
@@ -254,11 +350,14 @@ def get_event_stats(since: str | None = None, bucket_minutes: int = 60) -> dict:
         return [{"key": k, "count": v} for k, v in c.most_common(n)]
 
     return {
-        "totals": {"events": total, "alerts": alerts, "normal": total - alerts},
+        "totals": {"events": total, "alerts": alerts, "normal": total - alerts, "resolved": resolved},
         "by_class": as_list(by_class),
         "by_model": as_list(by_model),
         "by_severity": {k: by_severity.get(k, 0) for k in ("CRITICAL", "HIGH", "MEDIUM", "LOW")},
         "top_sources": as_list(top_sources, 10),
+        "top_targets": as_list(top_targets, 10),
+        "top_ports": as_list(top_ports, 10),
+        "by_protocol": as_list(by_protocol),
         "source_scope": {k: scope.get(k, 0) for k in ("internal", "external", "unknown")},
         "timeline": [buckets[k] for k in sorted(buckets)],
     }
@@ -355,5 +454,150 @@ def get_blocked_ips() -> list[dict]:
             "SELECT * FROM blocked_ips ORDER BY blocked_at DESC"
         ).fetchall()
         return [dict(row) for row in rows]
+    finally:
+        conn.close()
+
+
+# ── Event detail / notes / assignee ─────────────────────────────────────────
+
+def get_event_by_id(event_id: int) -> dict | None:
+    conn = get_db()
+    try:
+        row = conn.execute("SELECT * FROM prediction_events WHERE id = ?", (event_id,)).fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
+
+
+def get_related_events(source_ip: str, exclude_id: int, limit: int = 20) -> list[dict]:
+    """events อื่นจาก source IP เดียวกัน (ใหม่→เก่า) ใช้ใน ThreatInspectModal"""
+    conn = get_db()
+    try:
+        rows = conn.execute(
+            "SELECT * FROM prediction_events WHERE source_ip = ? AND id != ? ORDER BY timestamp DESC LIMIT ?",
+            (source_ip, exclude_id, limit),
+        ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def get_incident_notes(event_id: int) -> list[dict]:
+    conn = get_db()
+    try:
+        rows = conn.execute(
+            "SELECT id, username, note, timestamp FROM incident_notes WHERE event_id = ? ORDER BY id ASC",
+            (event_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def add_incident_note(event_id: int, username: str, note: str, timestamp: str) -> None:
+    conn = get_db()
+    try:
+        conn.execute(
+            "INSERT INTO incident_notes (event_id, username, note, timestamp) VALUES (?, ?, ?, ?)",
+            (event_id, username, note, timestamp),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def set_incident_assignee(event_id: int, assignee: str | None, updated_at: str) -> None:
+    conn = get_db()
+    try:
+        conn.execute(
+            """INSERT INTO incident_meta (event_id, assignee, updated_at) VALUES (?, ?, ?)
+               ON CONFLICT(event_id) DO UPDATE SET assignee = excluded.assignee, updated_at = excluded.updated_at""",
+            (event_id, assignee, updated_at),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def get_incident_assignees() -> dict[int, str]:
+    conn = get_db()
+    try:
+        rows = conn.execute("SELECT event_id, assignee FROM incident_meta WHERE assignee IS NOT NULL").fetchall()
+        return {r["event_id"]: r["assignee"] for r in rows}
+    finally:
+        conn.close()
+
+
+# ── Settings (runtime thresholds) ───────────────────────────────────────────
+
+def get_setting(key: str) -> str | None:
+    conn = get_db()
+    try:
+        row = conn.execute("SELECT value FROM app_settings WHERE key = ?", (key,)).fetchone()
+        return row["value"] if row else None
+    finally:
+        conn.close()
+
+
+def set_setting(key: str, value: str) -> None:
+    conn = get_db()
+    try:
+        conn.execute(
+            "INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            (key, value),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+# ── Sensor heartbeat ────────────────────────────────────────────────────────
+
+def touch_sensor(sensor: str, last_seen: str, info: str | None = None) -> None:
+    conn = get_db()
+    try:
+        conn.execute(
+            """INSERT INTO sensor_heartbeat (sensor, last_seen, info) VALUES (?, ?, ?)
+               ON CONFLICT(sensor) DO UPDATE SET last_seen = excluded.last_seen,
+                                                 info = COALESCE(excluded.info, sensor_heartbeat.info)""",
+            (sensor, last_seen, info),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def get_sensors() -> list[dict]:
+    conn = get_db()
+    try:
+        return [dict(r) for r in conn.execute("SELECT sensor, last_seen, info FROM sensor_heartbeat ORDER BY sensor")]
+    finally:
+        conn.close()
+
+
+# ── Users (General User accounts) ───────────────────────────────────────────
+
+def create_user(username: str, password_hash: str, name: str, lastname: str, phone: str,
+                email: str, created_at: str) -> bool:
+    """สร้างบัญชี — คืน False ถ้า username ซ้ำ (ไม่แยกตัวพิมพ์)"""
+    conn = get_db()
+    try:
+        conn.execute(
+            "INSERT INTO users (username, password_hash, name, lastname, phone, email, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (username, password_hash, name, lastname, phone, email, created_at),
+        )
+        conn.commit()
+        return True
+    except sqlite3.IntegrityError:
+        return False
+    finally:
+        conn.close()
+
+
+def get_user(username: str) -> dict | None:
+    conn = get_db()
+    try:
+        row = conn.execute("SELECT * FROM users WHERE username = ?", (username,)).fetchone()
+        return dict(row) if row else None
     finally:
         conn.close()

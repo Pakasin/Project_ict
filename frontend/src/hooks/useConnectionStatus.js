@@ -48,15 +48,6 @@ export function useConnectionStatus() {
     clearInterval(countdownTimerRef.current)
   }, [])
 
-  // ── Demo Mode: จำลองข้อมูลใหม่มาถึงทุก 12 วินาที ──
-  // เพื่อให้ "อัปเดตล่าสุด: เมื่อสักครู่" ใน Sidebar badge วิ่งได้เห็นๆ
-  // เมื่อใช้ WebSocket จริง ให้ลบ interval นี้แล้วเรียก markDataReceived() จาก ws.onmessage
-  useEffect(() => {
-    if (status !== CONN_STATUS.CONNECTED) return
-    const id = setInterval(() => setLastUpdate(Date.now()), 12000)
-    return () => clearInterval(id)
-  }, [status])
-
   // ── ล้าง timer ทั้งหมด (ใช้ก่อนเปลี่ยนสถานะ) ──
   function clearTimers() {
     clearInterval(countdownTimerRef.current)

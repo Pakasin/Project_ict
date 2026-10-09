@@ -66,8 +66,7 @@ export default function Login({ onLoginSuccess }) {
   // ─────────────────────────────────────────────────────────────────────────
   // หน้าล็อกอิน — ส่วนของ handleLoginSubmit (Sign In logic)
   // ลำดับการตรวจสอบ:
-  //   1. ตรวจ username/password จาก localStorage (user ที่สมัครผ่านหน้า Sign Up)
-  //   2. ถ้าไม่เจอ → call API /api/login (สำหรับ admin จาก backend)
+  //   POST /api/login — admin (.env) หรือ General User (ตาราง users) ตรวจที่ backend ทั้งหมด
   // ─────────────────────────────────────────────────────────────────────────
   async function handleLoginSubmit(e) {
     e.preventDefault()
@@ -83,37 +82,22 @@ export default function Login({ onLoginSuccess }) {
     setSuccessMsg(null)
 
     try {
-      // ── Step 1: ค้นหาใน localStorage (user ที่สมัครเอง) ──
-      const localUsers = JSON.parse(localStorage.getItem('cybershield_registered_operators') || '[]')
-      const foundUser = localUsers.find(
-        (u) => u.username.toLowerCase() === loginUsername.trim().toLowerCase() && u.password === loginPassword
-      )
-
-      if (foundUser) {
-        // ล็อกอินสำเร็จด้วย local user
-        playSound('success')
-        onLoginSuccess(foundUser.username, foundUser.role || 'General User', foundUser.email, {
-          name: foundUser.name || foundUser.username,
-          lastname: foundUser.lastname || '',
-          phone: foundUser.phone || '-'
-        })
-        return
-      }
-
-      // ── Step 2: ส่งไป API /api/login (สำหรับ admin account จาก backend) ──
+      // บัญชีทั้งหมด (admin จาก .env และ General User ที่สมัคร) ตรวจที่ backend — ได้ session cookie จริง
       const res = await fetch('/api/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: loginUsername, password: loginPassword }),
+        body: JSON.stringify({ username: loginUsername.trim(), password: loginPassword }),
       })
       const data = await res.json()
 
       if (data.ok) {
-        // API ล็อกอินสำเร็จ — ให้ role เป็น SOC Lead Operator
         playSound('success')
-        onLoginSuccess(data.username, 'SOC Lead Operator', `${data.username}@cybershield.th`, {
-          name: 'System', lastname: 'Administrator', phone: '-'
-        })
+        onLoginSuccess(
+          data.username,
+          data.role === 'admin' ? 'SOC Lead Operator' : 'General User',
+          data.email,
+          data.profile,
+        )
       } else {
         triggerShake(data.message || 'Invalid username or password')
       }
@@ -128,9 +112,9 @@ export default function Login({ onLoginSuccess }) {
 
   // ─────────────────────────────────────────────────────────────────────────
   // หน้าสมัครสมาชิก — ส่วนของ handleRegisterSubmit (Sign Up logic)
-  // บันทึก user ใหม่ลง localStorage พร้อม role: 'General User'
+  // สมัครผ่าน POST /api/register (เก็บในตาราง users ของ backend, role: General User)
   // ─────────────────────────────────────────────────────────────────────────
-  function handleRegisterSubmit(e) {
+  async function handleRegisterSubmit(e) {
     e.preventDefault()
 
     // ── Validation ทุกช่อง ──
@@ -149,47 +133,28 @@ export default function Login({ onLoginSuccess }) {
     setLoading(true)
     setError(null)
 
-    // จำลอง delay การบันทึก (500ms) เพื่อ UX ที่ดีขึ้น
-    setTimeout(() => {
-      try {
-        // ตรวจสอบ username ซ้ำใน localStorage
-        const localUsers = JSON.parse(localStorage.getItem('cybershield_registered_operators') || '[]')
-        const exists = localUsers.some((u) => u.username.toLowerCase() === regUsername.trim().toLowerCase())
-
-        // ป้องกันไม่ให้ใช้ชื่อ 'admin' เพราะเป็น reserved สำหรับ backend admin
-        if (exists || regUsername.trim().toLowerCase() === 'admin') {
-          triggerShake('Username already taken. Please choose another')
-          setLoading(false)
-          return
-        }
-
-        // ── สร้าง user object ใหม่ ──
-        const newUser = {
-          id: Date.now(),                         // ใช้ timestamp เป็น ID ชั่วคราว
-          username: regUsername.trim(),
-          name: regName.trim(),
-          lastname: regLastname.trim(),
-          phone: regPhone.trim(),
-          email: regEmail.trim(),
-          password: regPassword,                  // หมายเหตุ: เก็บใน localStorage ไม่ encrypt
-          role: 'General User',                   // user ที่สมัครเองจะได้ role General User
-          createdAt: new Date().toISOString(),
-        }
-
-        // บันทึก user ใหม่เข้า localStorage
-        localStorage.setItem('cybershield_registered_operators', JSON.stringify([...localUsers, newUser]))
-        playSound('success')
-        setLoading(false)
-        // สลับกลับไป Sign In แล้วกรอก username ให้อัตโนมัติ
-        setAuthMode('signin')
-        setLoginUsername(newUser.username)
-        setSuccessMsg(t.login.signupSuccessNotice) // ข้อความ "สมัครสำเร็จ กรุณาล็อกอิน"
-      } catch (err) {
-        triggerShake('Failed to save registration data')
-        console.error('Registration error:', err)
-        setLoading(false)
-      }
-    }, 500)
+    try {
+      const res = await fetch('/api/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: regUsername.trim(), password: regPassword, name: regName.trim(),
+          lastname: regLastname.trim(), phone: regPhone.trim(), email: regEmail.trim(),
+        }),
+      })
+      const data = await res.json()
+      if (!data.ok) { triggerShake(data.message || 'Registration failed'); return }
+      playSound('success')
+      // สลับกลับไป Sign In แล้วกรอก username ให้อัตโนมัติ
+      setAuthMode('signin')
+      setLoginUsername(data.username)
+      setSuccessMsg(t.login.signupSuccessNotice) // ข้อความ "สมัครสำเร็จ กรุณาล็อกอิน"
+    } catch (err) {
+      triggerShake('Connection failed. Please verify the server is running')
+      console.error('Registration error:', err)
+    } finally {
+      setLoading(false)
+    }
   }
 
   // ── Feature cards แสดงในแถบซ้ายของหน้าล็อกอิน (ฟีเจอร์ระบบ) ──

@@ -10,6 +10,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useState, useEffect, useRef } from 'react'
+import { LIVE_EVENT } from './hooks/useLiveEvents'
 import { Routes, Route, NavLink, useNavigate, useLocation } from 'react-router-dom'
 import Dashboard from './pages/Dashboard'
 import Logs from './pages/Logs'
@@ -122,12 +123,16 @@ function AppShell({ auth, onLogout }) {
       ws.onmessage = (e) => {
         try {
           const data = JSON.parse(e.data)
+          conn.markDataReceived() // ทั้ง ping และ event ถือว่า "ได้รับข้อมูลล่าสุด" จริง
           if (data.type === 'ping') return // heartbeat ping — ไม่ต้องทำอะไร
 
-          // ── ถ้าเป็น alert (confidence >= 0.82) ── 
-          if (data.is_alert || data.confidence >= 0.82) {
+          // แจ้งหน้าต่างๆ (Dashboard/Logs/Incidents) ให้รีเฟรชข้อมูลสด
+          window.dispatchEvent(new CustomEvent(LIVE_EVENT, { detail: data }))
+
+          // ── ถ้าเป็น alert (backend ตัดสินด้วย threshold ต่อโมเดลที่ตั้งใน Settings) ──
+          if (data.is_alert) {
             setActiveAlertsCount((prev) => Math.min(prev + 1, 99)) // เพิ่ม badge count (max 99)
-            if (data.confidence >= 0.92) {
+            if (data.confidence >= 0.95) { // = ระดับ CRITICAL ตรงกับ severity band ใน backend
               // วิกฤต: DEFCON 2 + เสียง critical (3 pulse)
               setDefcon(2)
               playSound('critical')
@@ -148,7 +153,12 @@ function AppShell({ auth, onLogout }) {
       }
 
       // reconnect อัตโนมัติทุก 5 วินาทีถ้า WebSocket หลุด
-      ws.onclose = () => { if (alive) retryTimer = setTimeout(connect, 5000) }
+      ws.onopen = () => conn.simulate.connected()
+      ws.onclose = () => {
+        if (!alive) return
+        conn.simulate.degraded() // สถานะจริง: socket หลุด กำลังลองใหม่
+        retryTimer = setTimeout(connect, 5000)
+      }
       ws.onerror = () => { ws.close() }
     }
 
@@ -316,42 +326,32 @@ export default function App() {
 
   /**
    * checkAuth — ตรวจสอบ session ที่มีอยู่
-   * ลำดับ: localStorage (cybershield_active_user) → API /api/me → ไม่ล็อกอิน
+   * ถาม /api/me (session cookie) — ไม่เชื่อ localStorage
    */
   async function checkAuth() {
     try {
-      // ── Step 1: ตรวจ localStorage (user ล็อกอินไว้แล้ว) ──
-      const activeUser = JSON.parse(localStorage.getItem('cybershield_active_user') || 'null')
-      if (activeUser && activeUser.username) {
-        setAuth({
-          checked: true,
-          user: activeUser.username,
-          role: activeUser.role || 'General User',
-          email: activeUser.email,
-          profile: activeUser.profile || { name: activeUser.username, lastname: '', phone: '-' }
-        })
-        return
-      }
-
-      // ── Step 2: ตรวจ session จาก backend (session cookie) ──
+      // backend session (cookie) คือแหล่งความจริงเดียว — เดิมเชื่อ localStorage ทำให้ UI โชว์ว่าเป็น admin
+      // ทั้งที่ API ปฏิเสธเพราะไม่มี session
       const res = await fetch('/api/me')
       const data = await res.json()
       if (data.ok) {
-        // backend admin session ยังอยู่
+        // โปรไฟล์ที่แก้ไว้ในหน้า Settings (เก็บเฉพาะในเบราว์เซอร์) ทับค่าจาก server ได้ถ้าเป็นผู้ใช้คนเดียวกัน
+        let saved = null
+        try { saved = JSON.parse(localStorage.getItem('cybershield_active_user') || 'null') } catch { /* ไม่มี */ }
+        const profile = saved?.user === data.username && saved.profile ? { ...data.profile, ...saved.profile } : data.profile
         setAuth({
           checked: true,
           user: data.username,
-          role: 'SOC Lead Operator',
-          email: `${data.username}@cybershield.th`,
-          profile: { name: 'System', lastname: 'Admin', phone: '-' }
+          role: data.role === 'admin' ? 'SOC Lead Operator' : 'General User',
+          email: data.email,
+          profile,
         })
       } else {
-        // ไม่มี session → แสดงหน้า Login
+        localStorage.removeItem('cybershield_active_user')
         setAuth({ checked: true, user: null, role: null, email: null, profile: null })
       }
     } catch (err) {
       console.error('Auth check failed:', err)
-      // network error → แสดงหน้า Login
       setAuth({ checked: true, user: null, role: null, email: null, profile: null })
     }
   }

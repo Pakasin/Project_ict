@@ -39,6 +39,7 @@ from backend.inference import (  # noqa: E402
     predict_flow_window,
 )
 from backend.rate_rules import RateRuleDetector  # noqa: E402
+from backend.sensors.heartbeat import start_heartbeat  # noqa: E402
 from backend.flow_features import (  # noqa: E402
     SourceWindowTracker,
     nfstream_flow_meta,
@@ -110,8 +111,28 @@ def extract_nslkdd_features(flow) -> list:
 # (parity test: tracker ตรงกับ pipeline ตอนเทรนบน 587k window — ต่างแค่ float rounding ของ gap ≤ 3e-4)
 
 
-def post_event(model_name: str, attack_class: str, confidence: float, source_ip: str) -> None:
-    """ส่ง Prediction Event ไปยัง FastAPI internal endpoint"""
+# IP protocol number → ชื่อ (แสดงใน Dashboard)
+PROTO_NAMES = {1: "ICMP", 6: "TCP", 17: "UDP"}
+
+
+def proto_name(n) -> str:
+    try:
+        return PROTO_NAMES.get(int(n), str(int(n)))
+    except (TypeError, ValueError):
+        return "?"
+
+
+def post_event(model_name: str, attack_class: str, confidence: float, source_ip: str,
+               flow=None) -> None:
+    """ส่ง Prediction Event ไปยัง FastAPI internal endpoint (flow = nfstream flow ให้แนบ dst/proto/bytes)"""
+    extra = {}
+    if flow is not None:
+        extra = {
+            "dst_ip": flow.dst_ip,
+            "dst_port": int(flow.dst_port),
+            "protocol": proto_name(flow.protocol),
+            "bytes": int(flow.bidirectional_bytes),
+        }
     try:
         requests.post(
             INTERNAL_URL,
@@ -121,6 +142,8 @@ def post_event(model_name: str, attack_class: str, confidence: float, source_ip:
                 "confidence": confidence,
                 "source_ip": source_ip,
                 "timestamp": datetime.now().isoformat(),
+                "sensor": "network",
+                **extra,
             },
             headers={"X-Internal-Token": INTERNAL_TOKEN},
             timeout=2,
@@ -132,6 +155,7 @@ def post_event(model_name: str, attack_class: str, confidence: float, source_ip:
 def main():
     """Main loop — capture flows จาก network interface แล้ว predict ทั้ง 2 models"""
     print(f"📡 Starting Network Sensor on interface: {NETWORK_INTERFACE}")
+    start_heartbeat(INTERNAL_URL.rsplit("/internal/", 1)[0], INTERNAL_TOKEN, "network", NETWORK_INTERFACE)
 
     streamer = nfstream.NFStreamer(
         source=NETWORK_INTERFACE,
@@ -153,14 +177,14 @@ def main():
                 model_intrusion, scaler_intrusion, list(nsl_window)
             )
             if nsl_class != "Normal" and nsl_confidence >= THRESHOLD_INTRUSION:
-                post_event("intrusion", nsl_class, nsl_confidence, src_ip)
+                post_event("intrusion", nsl_class, nsl_confidence, src_ip, flow)
                 print(f"🚨 [{src_ip}] Intrusion: {nsl_class} ({nsl_confidence:.1%})")
 
         # Rate rules: นับอัตรา flow ต่อ src/dst — ใช้เวลาจบ flow จาก nfstream (วินาที)
         for alert in rate_rules.observe(
             float(flow.bidirectional_last_seen_ms) / 1000.0, src_ip, flow.dst_ip, int(flow.dst_port)
         ):
-            post_event("flow_rules", alert.attack_class, 1.0, alert.source_ip)
+            post_event("flow_rules", alert.attack_class, 1.0, alert.source_ip, flow)
             print(f"🚨 [{alert.source_ip}] Rate rule: {alert.attack_class} ({alert.detail})")
 
         # Flow v2: window ต่อ source IP — tracker คืน None จนกว่า IP นี้จะมีครบ 10 flow
@@ -173,7 +197,7 @@ def main():
                 model_flow, flow_scaler, FLOW_CLASSES, flow_window
             )
             if cic_class != "BENIGN" and cic_confidence >= THRESHOLD_FLOW:
-                post_event("flow", cic_class, cic_confidence, src_ip)
+                post_event("flow", cic_class, cic_confidence, src_ip, flow)
                 print(f"🚨 [{src_ip}] Flow: {cic_class} ({cic_confidence:.1%})")
 
 

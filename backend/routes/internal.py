@@ -11,7 +11,10 @@ from fastapi import APIRouter, HTTPException, Header
 from pydantic import BaseModel
 import os
 
-from backend.db import save_prediction_event
+from datetime import datetime
+
+from backend.db import save_prediction_event, touch_sensor, get_setting
+from backend.notify import notify_alert
 from backend.routes.ws import broadcast
 
 router = APIRouter(tags=["internal"])
@@ -24,6 +27,12 @@ class PredictionEvent(BaseModel):
     confidence: float     # ค่าความมั่นใจ 0.0 - 1.0
     source_ip: str        # IP ต้นทาง
     timestamp: str        # ISO format timestamp
+    # optional — sensor รุ่นเก่าไม่ส่ง
+    dst_ip: str | None = None
+    dst_port: int | None = None
+    protocol: str | None = None
+    bytes: int | None = None
+    sensor: str | None = None   # ชื่อ sensor เช่น "network" | "http" | "lite"
 
 
 class EventResponse(BaseModel):
@@ -39,6 +48,35 @@ THRESHOLDS = {
 }
 
 
+def get_threshold(model_name: str) -> float:
+    """threshold ปัจจุบัน: ค่าที่ตั้งผ่าน UI (app_settings) มาก่อน ไม่งั้นใช้ .env"""
+    raw = get_setting(f"threshold_{model_name}")
+    if raw is not None:
+        try:
+            return float(raw)
+        except ValueError:
+            pass
+    return THRESHOLDS.get(model_name, 0.80)
+
+
+class Heartbeat(BaseModel):
+    sensor: str
+    info: str | None = None
+
+
+def _check_token(x_internal_token: str | None) -> None:
+    if x_internal_token != os.getenv("INTERNAL_TOKEN", ""):
+        raise HTTPException(status_code=403, detail="Invalid internal token")
+
+
+@router.post("/internal/heartbeat")
+async def receive_heartbeat(hb: Heartbeat, x_internal_token: str = Header(None)):
+    """sensor ส่ง heartbeat เป็นระยะ แม้ไม่มี event — ใช้บอกว่า sensor ยังทำงาน"""
+    _check_token(x_internal_token)
+    touch_sensor(hb.sensor, datetime.now().isoformat(), hb.info)
+    return {"ok": True}
+
+
 @router.post("/internal/event", response_model=EventResponse)
 async def receive_event(
     event: PredictionEvent,
@@ -47,12 +85,10 @@ async def receive_event(
     """รับ Prediction Event จาก sensor — ตรวจสอบ token, บันทึก, broadcast"""
 
     # ตรวจสอบ shared secret
-    expected_token = os.getenv("INTERNAL_TOKEN", "")
-    if x_internal_token != expected_token:
-        raise HTTPException(status_code=403, detail="Invalid internal token")
+    _check_token(x_internal_token)
 
     # ตรวจว่า confidence >= threshold → ถือเป็น Alert
-    threshold = THRESHOLDS.get(event.model_name, 0.80)
+    threshold = get_threshold(event.model_name)
     is_alert = event.confidence >= threshold
 
     # บันทึกลง SQLite
@@ -63,7 +99,14 @@ async def receive_event(
         source_ip=event.source_ip,
         timestamp=event.timestamp,
         is_alert=is_alert,
+        dst_ip=event.dst_ip,
+        dst_port=event.dst_port,
+        protocol=event.protocol,
+        bytes_=event.bytes,
+        sensor=event.sensor,
     )
+    # event ก็นับเป็น heartbeat ของ sensor นั้น
+    touch_sensor(event.sensor or f"{event.model_name}-sensor", datetime.now().isoformat())
 
     # Broadcast ไปยัง dashboard clients ทุกตัว
     await broadcast({
@@ -71,5 +114,9 @@ async def receive_event(
         "is_alert": is_alert,
         "event_id": event_id,
     })
+
+    # แจ้งเตือนภายนอก (webhook) เฉพาะ alert ของจริง ไม่ใช่ผลปกติ
+    if is_alert and event.attack_class.lower() not in ("normal", "benign"):
+        await notify_alert({**event.model_dump(), "event_id": event_id})
 
     return EventResponse(ok=True, event_id=event_id)

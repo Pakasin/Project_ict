@@ -12,10 +12,11 @@
 
 import { useState, useEffect } from 'react'
 import React from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import ThreatInspectModal from '../components/ThreatInspectModal'
 import InfoHelp from '../components/InfoHelp'
 import { playSound } from '../utils/sound'
+import { useLiveEvents } from '../hooks/useLiveEvents'
 import { useApp } from '../context/AppContext'
 
 // ── สี badge ของระดับความรุนแรง (Severity) ──────────────────────────────────
@@ -286,35 +287,13 @@ function formatTH(ts) {
 export default function Logs() {
   const { t } = useApp()
   const navigate = useNavigate()
+  const [params] = useSearchParams()  // drill-down จาก Dashboard: ?attack_class=&source_ip=&model=&severity=
 
   // logs: ดึงจาก /api/logs จริง (ไม่มี mock) — เติม ref / sevKey / statusKey ให้ตารางใช้
-  const [logs, setLogs] = useState([])
+  const [logs, setLogs] = useState([])   // เฉพาะหน้าปัจจุบัน (server-side paging)
+  const [total, setTotal] = useState(0)     // จำนวนทั้งหมดที่ตรง filter
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(false)
-
-  useEffect(() => { loadLogs() }, [])
-
-  async function loadLogs() {
-    setLoading(true); setError(false)
-    try {
-      const [logRes, stRes] = await Promise.all([
-        fetch('/api/logs?limit=500'),
-        fetch('/api/incidents/statuses'),
-      ])
-      const logData = await logRes.json()
-      if (!logData.ok) throw new Error('logs')
-      let statusMap = {}
-      try { const st = await stRes.json(); if (st.ok) statusMap = st.data } catch { /* ไม่มี status = OPEN */ }
-      setLogs(logData.data.map(e => ({
-        ...e,
-        ref: `EVT-${e.id}`,
-        sevKey: e.confidence >= 0.95 ? 'CRITICAL' : e.confidence >= 0.9 ? 'HIGH' : e.confidence >= 0.8 ? 'MEDIUM' : 'LOW',
-        statusKey: statusMap[e.id] || 'OPEN',
-      })))
-    } catch {
-      setError(true); setLogs([])
-    } finally { setLoading(false) }
-  }
 
   // ── Pagination ──
   const [page, setPage] = useState(1) // หน้าปัจจุบัน (เริ่มที่ 1)
@@ -324,24 +303,101 @@ export default function Logs() {
 
   // ── Filter State — ตัวกรองทั้งหมดใช้ตรวจ logic ใน filtered array ───────────────
   const [searchQuery,    setSearchQuery]    = useState('')  // ค้นหา: source_ip, attack_class, model, ref
-  const [modelFilter,    setModelFilter]    = useState('')  // โมเดล (Intrusion/Flow/Injection LSTM)
-  const [attackFilter,   setAttackFilter]   = useState('')  // ประเภทการโจมตี
-  const [severityFilter, setSeverityFilter] = useState('')  // ระดับความรุนแรง (CRITICAL/HIGH/MEDIUM/LOW)
+  const [modelFilter,    setModelFilter]    = useState(params.get('model') || '')  // โมเดล (Intrusion/Flow/Injection LSTM)
+  const [attackFilter,   setAttackFilter]   = useState(params.get('attack_class') || '')  // ประเภทการโจมตี
+  const [severityFilter, setSeverityFilter] = useState(params.get('severity') || '')  // ระดับความรุนแรง (CRITICAL/HIGH/MEDIUM/LOW)
   const [statusFilter,   setStatusFilter]   = useState('')  // สถานะ (BLOCKED/INVESTIGATING/MITIGATED)
-  const [sourceIpFilter, setSourceIpFilter] = useState('')  // กรอง Source IP
+  const [sourceIpFilter, setSourceIpFilter] = useState(params.get('source_ip') || '')  // กรอง Source IP
   const [dateFrom,       setDateFrom]       = useState('')  // วันที่เริ่มต้น (ISO string)
   const [dateTo,         setDateTo]         = useState('')  // วันที่สิ้นสุด (ISO string)
 
-  const PAGE_SIZE = 10 // ❗ เปลี่ยนตรงนี้เพื่อปรับจำนวนรายการต่อหน้า
+  const [pageSize, setPageSize] = useState(10) // รายการต่อหน้า (เลือกได้ที่ท้ายตาราง)
+  const [live, setLive] = useState(true)        // รีเฟรชอัตโนมัติเมื่อมี event ใหม่ (เฉพาะหน้า 1)
+  const [classOptions, setClassOptions] = useState([]) // ประเภทการโจมตีทั้งหมดที่เคยพบ (จาก /api/stats)
+
+  // search ดีเลย์ 300ms เพื่อไม่ยิง API ทุกตัวอักษร
+  const [debouncedQ, setDebouncedQ] = useState('')
+  useEffect(() => {
+    const id = setTimeout(() => { setDebouncedQ(searchQuery.trim()); setPage(1) }, 300)
+    return () => clearTimeout(id)
+  }, [searchQuery])
+
+  // filter ทั้งหมด → query string ของ /api/logs (กรองฝั่ง server)
+  function buildParams() {
+    const p = new URLSearchParams()
+    if (modelFilter)    p.set('model_name', modelFilter === 'injection' ? 'sqli' : modelFilter) // option "injection" = model_name "sqli" ใน DB
+    if (attackFilter)   p.set('attack_class', attackFilter)
+    if (severityFilter) p.set('severity', severityFilter)
+    if (statusFilter)   p.set('status', statusFilter)
+    if (sourceIpFilter) p.set('source_ip', sourceIpFilter)
+    if (debouncedQ)     p.set('q', debouncedQ)
+    if (dateFrom)       p.set('since', dateFrom.slice(0, 10))
+    if (dateTo)         p.set('until', dateTo.slice(0, 10) + 'T23:59:59')
+    return p
+  }
+
+  function decorate(rows, statusMap) {
+    return rows.map(e => ({
+      ...e,
+      ref: `EVT-${e.id}`,
+      sevKey: e.confidence >= 0.95 ? 'CRITICAL' : e.confidence >= 0.9 ? 'HIGH' : e.confidence >= 0.8 ? 'MEDIUM' : 'LOW',
+      statusKey: statusMap[e.id] || 'OPEN',
+    }))
+  }
+
+  async function loadLogs({ silent = false } = {}) {
+    if (!silent) setLoading(true)
+    setError(false)
+    try {
+      const p = buildParams()
+      p.set('limit', pageSize); p.set('offset', (page - 1) * pageSize)
+      const [logRes, stRes] = await Promise.all([fetch(`/api/logs?${p}`), fetch('/api/incidents/statuses')])
+      const logData = await logRes.json()
+      if (!logData.ok) throw new Error('logs')
+      let statusMap = {}
+      try { const st = await stRes.json(); if (st.ok) statusMap = st.data } catch { /* ไม่มี status = OPEN */ }
+      setLogs(decorate(logData.data, statusMap)); setTotal(logData.total)
+    } catch {
+      setError(true); setLogs([]); setTotal(0)
+    } finally { setLoading(false) }
+  }
+
+  // ดึงทุกแถวที่ตรง filter (วนทีละ 500) สำหรับ Export — ไม่ใช่แค่หน้าปัจจุบัน
+  async function fetchAllFiltered() {
+    const out = []
+    const stRes = await fetch('/api/incidents/statuses').then(r => r.json()).catch(() => null)
+    const statusMap = stRes?.ok ? stRes.data : {}
+    for (let offset = 0; offset < 20000; offset += 500) {
+      const p = buildParams(); p.set('limit', 500); p.set('offset', offset)
+      const d = await fetch(`/api/logs?${p}`).then(r => r.json())
+      if (!d.ok) break
+      out.push(...decorate(d.data, statusMap))
+      if (out.length >= d.total || d.data.length < 500) break
+    }
+    return out
+  }
+
+  useEffect(() => {
+    loadLogs()
+  }, [page, pageSize, modelFilter, attackFilter, severityFilter, statusFilter, sourceIpFilter, debouncedQ, dateFrom, dateTo])
+
+  // ตัวเลือกประเภทการโจมตี = ทุก class ที่เคยพบ (ไม่ใช่แค่ที่อยู่ในหน้าปัจจุบัน)
+  useEffect(() => {
+    fetch('/api/stats').then(r => r.json()).then(d => { if (d.ok) setClassOptions(d.data.by_class.map(c => c.key)) }).catch(() => {})
+  }, [])
+
+  // event ใหม่จาก /ws/feed → รีเฟรชเงียบๆ (เฉพาะเปิด live และอยู่หน้า 1)
+  useLiveEvents(() => loadLogs({ silent: true }), { enabled: live && page === 1 })
 
   /**
    * handleExportCSV — ส่งออก log ที่ filter แล้วเป็นไฟล์ .csv
    * สร้าง Blob แล้ว trigger download ผ่าน anchor element ชั่วคราว
    */
-  function handleExportCSV() {
+  async function handleExportCSV() {
     playSound('click')
-    const headers = ['id', 'ref', 'attack_class', 'source_ip', 'sevKey', 'statusKey', 'model_name', 'confidence', 'timestamp']
-    const rows = [headers.join(','), ...filtered.map(r => headers.map(h => JSON.stringify(r[h] ?? '')).join(','))].join('\n')
+    const all = await fetchAllFiltered()
+    const headers = ['id', 'ref', 'attack_class', 'source_ip', 'dst_ip', 'dst_port', 'protocol', 'bytes', 'sensor', 'sevKey', 'statusKey', 'model_name', 'confidence', 'timestamp']
+    const rows = [headers.join(','), ...all.map(r => headers.map(h => JSON.stringify(r[h] ?? '')).join(','))].join('\n')
     const blob = new Blob([rows], { type: 'text/csv;charset=utf-8;' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a'); a.href = url; a.download = 'cybershield_logs.csv'
@@ -353,9 +409,10 @@ export default function Logs() {
    * handleExportJSON — ส่งออก log ที่ filter แล้วเป็นไฟล์ .json
    * สร้าง data URI แล้ว trigger download ผ่าน anchor element
    */
-  function handleExportJSON() {
+  async function handleExportJSON() {
     playSound('click')
-    const url = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(filtered, null, 2))
+    const all = await fetchAllFiltered()
+    const url = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(all, null, 2))
     const a = document.createElement('a'); a.href = url; a.download = 'cybershield_logs.json'
     document.body.appendChild(a); a.click(); document.body.removeChild(a)
     playSound('success')
@@ -372,27 +429,10 @@ export default function Logs() {
     setPage(1) // reset pagination
   }
 
-  // ── Logic กรองข้อมูล ───────────────────────────────────────────────────────────────
-  // filtered: logs ที่ผ่าน filter ทั้งหมด — ใช้ทำ pagination และ export
-  const filtered = logs.filter(l => {
-    const q = searchQuery.toLowerCase()
-    // matchQ: ตรงกับ search query ใน source_ip, attack_class, model_name หรือ ref
-    const matchQ      = !q || [l.source_ip, l.attack_class, l.model_name, l.ref].some(v => v?.toLowerCase().includes(q))
-    // 'flow' ต้องไม่ดึง flow_rules มาด้วย (includes จะตรงทั้งคู่)
-    const matchModel  = !modelFilter   || (l.model_name?.toLowerCase().includes(modelFilter) && !(modelFilter === 'flow' && l.model_name.toLowerCase().includes('flow_rules')))
-    const matchAttack = !attackFilter  || l.attack_class === attackFilter
-    const matchSev    = !severityFilter|| l.sevKey === severityFilter
-    const matchStatus = !statusFilter  || l.statusKey === statusFilter
-    const matchSrc    = !sourceIpFilter|| l.source_ip?.includes(sourceIpFilter)
-    // matchFrom/matchTo: ตรวจการเปรียบเทียบสตริง ISO โดยตรง (ใช้ได้เพราะ ISO format เรียง lexicographically)
-    const matchFrom   = !dateFrom      || l.timestamp >= dateFrom
-    const matchTo     = !dateTo        || l.timestamp.slice(0,10) <= dateTo
-    return matchQ && matchModel && matchAttack && matchSev && matchStatus && matchSrc && matchFrom && matchTo
-  })
-
-  // คำนวณ pagination: จำนวนหน้าทั้งหมด และ logs ในหน้าปัจจุบัน
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
-  const paginated  = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+  // กรอง/แบ่งหน้าทำฝั่ง server แล้ว — logs คือหน้าปัจจุบันที่ตรง filter, total คือจำนวนทั้งหมด
+  const filtered = logs
+  const totalPages = Math.max(1, Math.ceil(total / pageSize))
+  const paginated  = logs
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-6)' }}>
@@ -408,11 +448,11 @@ export default function Logs() {
           </div>
         </div>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-          <button className="btn btn-outline" onClick={handleExportCSV} disabled={filtered.length === 0} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <button className="btn btn-outline" onClick={handleExportCSV} disabled={total === 0} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
             ส่งออก CSV
           </button>
-          <button className="btn btn-outline" onClick={handleExportJSON} disabled={filtered.length === 0} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <button className="btn btn-outline" onClick={handleExportJSON} disabled={total === 0} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>
             ส่งออก JSON
           </button>
@@ -450,7 +490,7 @@ export default function Logs() {
             <select value={attackFilter} onChange={e => { setAttackFilter(e.target.value); setPage(1) }}
               style={{ padding: '9px 12px', border: '1px solid var(--border-soft)', borderRadius: 8, background: 'var(--row-head-bg)', color: 'var(--text)', fontSize: 13, cursor: 'pointer' }}>
               <option value="">ประเภทการโจมตีทั้งหมด</option>
-              {[...new Set(logs.map(l => l.attack_class))].sort().map(c => <option key={c} value={c}>{c}</option>)}
+              {[...new Set([...classOptions, ...(attackFilter ? [attackFilter] : [])])].sort().map(c => <option key={c} value={c}>{c}</option>)}
             </select>
           </div>
         </div>
@@ -488,7 +528,6 @@ export default function Logs() {
             <select value={statusFilter} onChange={e => { setStatusFilter(e.target.value); setPage(1) }}
               style={{ padding: '9px 12px', border: '1px solid var(--border-soft)', borderRadius: 8, background: 'var(--row-head-bg)', color: 'var(--text)', fontSize: 13, cursor: 'pointer' }}>
               <option value="">ทั้งหมด</option>
-              <option value="BLOCKED">บล็อกแล้ว</option>
               <option value="INVESTIGATING">กำลังตรวจสอบ</option>
               <option value="MITIGATED">แก้ไขแล้ว</option>
               <option value="OPEN">เปิดอยู่</option>
@@ -522,15 +561,19 @@ export default function Logs() {
       <div className="card elev-sm" style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 16 }}>
         <div style={{ fontSize: 14.5, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 10 }}>
           ผลการค้นหา
-          <span style={{ background: 'var(--accent)', color: '#fff', fontSize: 12, fontWeight: 700, padding: '2px 10px', borderRadius: 999 }}>{filtered.length} รายการ</span>
+          <span style={{ background: 'var(--accent)', color: '#fff', fontSize: 12, fontWeight: 700, padding: '2px 10px', borderRadius: 999 }}>{total} รายการ</span>
+          <label style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, fontWeight: 500, color: 'var(--text-secondary)', cursor: 'pointer' }}>
+            <input type="checkbox" checked={live} onChange={e => setLive(e.target.checked)} />
+            อัปเดตสด (หน้า 1)
+          </label>
         </div>
 
         {loading ? (
           <div style={{ display: 'flex', justifyContent: 'center', padding: 40 }}><div className="spinner"></div></div>
-        ) : filtered.length === 0 ? (
+        ) : logs.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--text-tertiary)', fontSize: 14 }}>
             <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" style={{ marginBottom: 12, opacity: .4 }}><rect x="5" y="3" width="14" height="18" rx="1"></rect><line x1="8" y1="8" x2="16" y2="8"></line><line x1="8" y1="12" x2="16" y2="12"></line><line x1="8" y1="16" x2="11" y2="16"></line></svg>
-            <div>{error ? 'เชื่อมต่อ API ไม่ได้ — ไม่สามารถโหลดบันทึกเหตุการณ์' : logs.length === 0 ? 'ยังไม่มีเหตุการณ์ที่ตรวจพบ' : 'ไม่พบข้อมูล'}</div>
+            <div>{error ? 'เชื่อมต่อ API ไม่ได้ — ไม่สามารถโหลดบันทึกเหตุการณ์' : total === 0 && !modelFilter && !attackFilter && !severityFilter && !statusFilter && !sourceIpFilter && !debouncedQ && !dateFrom && !dateTo ? 'ยังไม่มีเหตุการณ์ที่ตรวจพบ' : 'ไม่พบข้อมูล'}</div>
             <button onClick={clearFilters} style={{ marginTop: 14, padding: '8px 18px', borderRadius: 8, border: '1px solid var(--border-soft)', background: 'transparent', cursor: 'pointer', color: 'var(--text-secondary)', fontSize: 13 }}>ล้างตัวกรอง</button>
           </div>
         ) : (
@@ -587,7 +630,7 @@ export default function Logs() {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, color: 'var(--text-secondary)' }}>
                 <span>แสดง</span>
-                <select value={PAGE_SIZE} style={{ padding: '5px 10px', border: '1px solid var(--border-soft)', borderRadius: 6, background: 'var(--row-head-bg)', color: 'var(--text)', fontSize: 13 }}>
+                <select value={pageSize} onChange={e => { setPageSize(Number(e.target.value)); setPage(1) }} style={{ padding: '5px 10px', border: '1px solid var(--border-soft)', borderRadius: 6, background: 'var(--row-head-bg)', color: 'var(--text)', fontSize: 13 }}>
                   <option>10</option><option>25</option><option>50</option>
                 </select>
                 <span>รายการต่อหน้า</span>
