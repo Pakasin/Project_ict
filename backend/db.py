@@ -408,6 +408,93 @@ def get_event_stats(since: str | None = None, bucket_minutes: int = 60, until: s
     }
 
 
+# ── Event groups (ยุบ event ซ้ำเป็นการโจมตีหนึ่งครั้ง) ──────────────────────────────────
+
+MAX_GROUP_ROWS = 100000   # จำนวน event สูงสุดที่ยอมดึงมารวมกลุ่มต่อครั้ง (ใหม่สุดก่อน) — เกินแล้วบอก truncated
+
+
+def _parse_ts(value: str):
+    """timestamp หลายรูปแบบที่ sensor ส่งมา ("...Z", "+00:00", ไม่มี timezone) → naive datetime (aware แปลงเป็น UTC) หรือ None"""
+    from datetime import datetime, timezone
+    try:
+        d = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except (ValueError, AttributeError):
+        return None
+    return d.astimezone(timezone.utc).replace(tzinfo=None) if d.tzinfo else d
+
+
+def get_event_groups(
+    gap_minutes: float = 15,
+    limit: int = 50,
+    offset: int = 0,
+    model_name: str | None = None,
+    attack_class: str | None = None,
+    alerts_only: bool = False,
+    since: str | None = None,
+    until: str | None = None,
+    source_ip: str | None = None,
+    q: str | None = None,
+    severity: str | None = None,
+    status: str | None = None,
+    exclude: dict[str, list[str]] | None = None,
+) -> tuple[list[dict], int, bool]:
+    """ยุบ event เป็นกลุ่ม: (source_ip, attack_class, model_name) เดียวกันที่ห่างกันไม่เกิน gap_minutes = การโจมตีหนึ่งครั้ง
+
+    ใช้ filter ชุดเดียวกับ get_prediction_events. คืน (กลุ่มของหน้านี้ เรียงล่าสุดก่อน, จำนวนกลุ่มทั้งหมด, truncated)
+    นับ is_alert / muted แยก เพื่อไม่ให้การโจมตีที่ถูกปิดเสียงหายไปจากภาพรวม
+    """
+    from datetime import timedelta
+    where, params = _events_where(model_name, attack_class, alerts_only, since, until, source_ip, q, severity, status, exclude)
+    conn = get_db()
+    try:
+        rows = conn.execute(
+            "SELECT id, model_name, attack_class, source_ip, timestamp, confidence, is_alert, muted_by, sensor "
+            "FROM prediction_events" + where + " ORDER BY timestamp DESC, id DESC LIMIT ?",
+            [*params, MAX_GROUP_ROWS],
+        ).fetchall()
+    finally:
+        conn.close()
+    truncated = len(rows) >= MAX_GROUP_ROWS
+
+    buckets: dict[tuple, list] = {}
+    for r in rows:
+        buckets.setdefault((r["source_ip"], r["attack_class"], r["model_name"]), []).append(r)
+
+    gap = timedelta(minutes=max(0.0, gap_minutes))
+    groups: list[dict] = []
+    for (ip, cls, model), items in buckets.items():
+        parsed = [(_parse_ts(r["timestamp"]), r) for r in items]
+        # เวลาอ่านไม่ได้ → แยกเป็นกลุ่มเดี่ยว (ไม่เดาว่าอยู่กลุ่มไหน)
+        runs: list[list] = []
+        good = sorted((p for p in parsed if p[0] is not None), key=lambda p: (p[0], p[1]["id"]))
+        for ts, r in good:
+            if runs and ts - runs[-1][-1][0] <= gap:
+                runs[-1].append((ts, r))
+            else:
+                runs.append([(ts, r)])
+        for p in (p for p in parsed if p[0] is None):
+            runs.append([p])
+        for run in runs:
+            rs = [r for _, r in run]
+            stamps = [t for t, _ in run if t is not None]
+            groups.append({
+                "source_ip": ip, "attack_class": cls, "model_name": model,
+                "count": len(rs),
+                "alerts": sum(1 for r in rs if r["is_alert"]),
+                "muted": sum(1 for r in rs if r["muted_by"]),
+                "first_ts": rs[0]["timestamp"], "last_ts": rs[-1]["timestamp"],
+                "first_id": rs[0]["id"], "last_id": rs[-1]["id"],
+                "max_confidence": max(r["confidence"] for r in rs),
+                "sensors": sorted({r["sensor"] for r in rs if r["sensor"]}),
+                "duration_s": round((stamps[-1] - stamps[0]).total_seconds()) if len(stamps) > 1 else 0,
+                "_sort": (run[-1][0] or _parse_ts("1970-01-01T00:00:00"), run[-1][1]["id"]),
+            })
+    groups.sort(key=lambda g: g["_sort"], reverse=True)
+    for g in groups:
+        del g["_sort"]
+    return groups[offset:offset + limit], len(groups), truncated
+
+
 # ── Mute rules ──────────────────────────────────────────────────────────────────
 
 def add_mute_rule(source_ip: str | None, attack_class: str | None, reason: str,

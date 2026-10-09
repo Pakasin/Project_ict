@@ -1527,3 +1527,14 @@ tr:hover .cell-filter, .cell-filter:focus-within { opacity: 1; }
   display: inline-block; margin-left: 6px; padding: 3px 9px; border-radius: 999px; font-size: 11px; font-weight: 600;
   color: var(--text-secondary); background: var(--gray-chip-bg); border: 1px dashed var(--border); white-space: nowrap;
 }
+
+/* Logs: มุมมองจัดกลุ่ม */
+.group-row { border-bottom: 1px solid var(--border-soft); cursor: pointer; transition: background .12s ease; }
+.group-row:hover { background: var(--row-head-bg); }
+
+/* Dashboard: grids that were fixed 3/4 columns (overflowed phones — measured 684px wide at a 390px viewport) */
+.dash-grid { display: grid; gap: 14px; }
+.dash-grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.dash-grid-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+@media (max-width: 900px) { .dash-grid-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 640px) { .dash-grid-3, .dash-grid-4 { grid-template-columns: minmax(0, 1fr); } }

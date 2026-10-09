@@ -483,9 +483,9 @@ export default function Dashboard() {
           <h2 style={{ margin: '0 0 4px', fontSize: 24, fontWeight: 800 }}>ยินดีต้อนรับกลับ, {auth?.user || 'admin'} 👋</h2>
           <p className="text-muted" style={{ margin: 0, fontSize: 13.5 }}>ภาพรวมสถานะความปลอดภัยของระบบและกิจกรรมล่าสุด</p>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', maxWidth: '100%' }}>
           {/* ช่องค้นหา */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 14px', borderRadius: 10, border: '1px solid var(--border-soft)', background: 'var(--card-bg)', width: 260 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 14px', borderRadius: 10, border: '1px solid var(--border-soft)', background: 'var(--card-bg)', width: 260, maxWidth: '100%' }}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
             <input value={search} onChange={e => setSearch(e.target.value)} placeholder="ค้นหา IP, ประเภท, โมเดล..." style={{ border: 'none', background: 'transparent', color: 'var(--text)', fontSize: 13, outline: 'none', width: '100%' }} />
           </div>
@@ -522,7 +522,7 @@ export default function Dashboard() {
       </div>
 
       {/* ── การ์ดสถิติสรุป ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 14 }}>
+      <div className="dash-grid dash-grid-3">
         {/* เหตุการณ์ทั้งหมด */}
         <div className="card elev-sm" style={{ padding: '18px 20px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 12.5, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 10 }}>
@@ -622,7 +622,7 @@ export default function Dashboard() {
         </div>
 
         {/* กริดการ์ดสรุป 4 ช่อง */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14 }}>
+        <div className="dash-grid dash-grid-4">
           {/* การ์ด 1: ประเภทเหตุการณ์ */}
           <div className="card elev-sm" style={{ padding: '18px 20px' }}>
             <div style={{ fontWeight: 700, fontSize: 13.5, marginBottom: 3 }}>ประเภทเหตุการณ์</div>

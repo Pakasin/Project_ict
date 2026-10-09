@@ -299,6 +299,67 @@ function CellFilter({ field, value, onInclude, onExclude }) {
   )
 }
 
+// ระยะเวลาเป็นข้อความอ่านง่าย
+function fmtDuration(s) {
+  if (s < 1) return 'ครั้งเดียว'
+  if (s < 60) return `${s} วินาที`
+  if (s < 3600) return `${Math.round(s / 60)} นาที`
+  return `${(s / 3600).toFixed(1)} ชม.`
+}
+
+/**
+ * GroupsTable — การโจมตีหนึ่งครั้ง = event ของ (IP ต้นทาง, ประเภท, แหล่งตรวจจับ) เดียวกันที่ห่างกันไม่เกิน N นาที
+ * กดแถว/ปุ่มเพื่อเจาะลงดู event ทีละรายการของกลุ่มนั้น
+ */
+function GroupsTable({ groups, onOpen, onInclude, onExclude }) {
+  return (
+    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+      <thead>
+        <tr style={{ borderBottom: '2px solid var(--border-soft)' }}>
+          {['ประเภทการโจมตี', 'แหล่งที่มา', 'จำนวน', 'ช่วงเวลา', 'ความมั่นใจสูงสุด', 'ตรวจจับโดย', ''].map((h, i) => (
+            <th key={i} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11.5, fontWeight: 600, color: 'var(--text-tertiary)', whiteSpace: 'nowrap' }}>{h}</th>
+          ))}
+        </tr>
+      </thead>
+      <tbody>
+        {groups.map((g) => {
+          const atk = ATTACK_PILL[g.attack_class] || { bg: 'var(--row-head-bg)', color: 'var(--text-secondary)' }
+          const when = formatTH(g.first_ts).split(' ')
+          return (
+            <tr key={`${g.first_id}-${g.last_id}-${g.model_name}`} className="group-row" onClick={() => { playSound('click'); onOpen(g) }}>
+              <td style={{ padding: '14px', verticalAlign: 'middle' }}>
+                <span style={{ background: atk.bg, color: atk.color, fontSize: 12.5, fontWeight: 700, padding: '5px 12px', borderRadius: 999 }}>{g.attack_class}</span>
+                <CellFilter field="attack_class" value={g.attack_class} onInclude={onInclude} onExclude={onExclude} />
+              </td>
+              <td style={{ padding: '14px', verticalAlign: 'middle' }}>
+                <span className="mono" style={{ fontSize: 12.5 }}>{g.source_ip}</span>
+                <CellFilter field="source_ip" value={g.source_ip} onInclude={onInclude} onExclude={onExclude} />
+              </td>
+              <td style={{ padding: '14px', verticalAlign: 'middle' }}>
+                <span className="mono" style={{ fontSize: 15, fontWeight: 700 }}>×{g.count.toLocaleString()}</span>
+                {g.muted > 0 && <span className="muted-tag" title="จำนวน event ในกลุ่มที่ถูกปิดเสียง (ไม่นับเป็น alert)">ปิดเสียง {g.muted}</span>}
+              </td>
+              <td style={{ padding: '14px', verticalAlign: 'middle' }}>
+                <div style={{ fontSize: 12.5, fontWeight: 600 }}>{when.slice(0, 3).join(' ')} {when[3]}</div>
+                <div className="text-muted" style={{ fontSize: 12 }}>นาน {fmtDuration(g.duration_s)}</div>
+              </td>
+              <td style={{ padding: '14px', verticalAlign: 'middle' }}>
+                <span className="mono" style={{ fontWeight: 600 }}>{(g.max_confidence * 100).toFixed(1)}%</span>
+              </td>
+              <td style={{ padding: '14px', verticalAlign: 'middle' }}>
+                <span className={`event-model-badge ${g.model_name}`}>{g.model_name}</span>
+              </td>
+              <td style={{ padding: '14px', verticalAlign: 'middle', textAlign: 'right' }}>
+                <button type="button" className="btn btn-outline btn-sm" onClick={(e) => { e.stopPropagation(); playSound('click'); onOpen(g) }}>ดู event</button>
+              </td>
+            </tr>
+          )
+        })}
+      </tbody>
+    </table>
+  )
+}
+
 /**
  * Logs — หน้าดู Security Event Logs ทั้งหมด (Search, Filter, Paginate, Export)
  */
@@ -337,6 +398,10 @@ export default function Logs() {
 
   const [pageSize, setPageSize] = useState(10) // รายการต่อหน้า (เลือกได้ที่ท้ายตาราง)
   const [live, setLive] = useState(true)        // รีเฟรชอัตโนมัติเมื่อมี event ใหม่ (เฉพาะหน้า 1)
+  const [view, setView] = useState(params.get('view') === 'groups' ? 'groups' : 'list')   // list = event ทีละรายการ | groups = ยุบเป็นการโจมตีครั้งละหนึ่งแถว
+  const [gap, setGap] = useState(Number(params.get('gap')) || 15)                         // นาที: event ห่างกันเกินนี้ถือเป็นการโจมตีครั้งใหม่
+  const [groups, setGroups] = useState([])
+  const [truncated, setTruncated] = useState(false)
   const [classOptions, setClassOptions] = useState([]) // ประเภทการโจมตีทั้งหมดที่เคยพบ (จาก /api/stats)
 
   // search ดีเลย์ 300ms เพื่อไม่ยิง API ทุกตัวอักษร
@@ -407,8 +472,9 @@ export default function Logs() {
     if (dateFrom)       p.set('from', dateFrom)
     if (dateTo)         p.set('to', dateTo)
     for (const f of EXCLUDE_FIELDS) if (excludes[f].length) p.set(`exclude_${f}`, excludes[f].join(','))
+    if (view === 'groups') { p.set('view', 'groups'); if (gap !== 15) p.set('gap', String(gap)) }
     setParams(p, { replace: true })
-  }, [modelFilter, attackFilter, severityFilter, statusFilter, sourceIpFilter, debouncedQ, dateFrom, dateTo, excludes])
+  }, [modelFilter, attackFilter, severityFilter, statusFilter, sourceIpFilter, debouncedQ, dateFrom, dateTo, excludes, view, gap])
 
   function decorate(rows, statusMap) {
     return rows.map(e => ({
@@ -425,6 +491,13 @@ export default function Logs() {
     try {
       const p = buildParams()
       p.set('limit', pageSize); p.set('offset', (page - 1) * pageSize)
+      if (view === 'groups') {
+        p.set('gap_minutes', gap)
+        const gd = await (await fetch(`/api/logs/groups?${p}`)).json()
+        if (!gd.ok) throw new Error('groups')
+        setGroups(gd.data); setTotal(gd.total); setTruncated(gd.truncated); setLogs([])
+        return
+      }
       const [logRes, stRes] = await Promise.all([fetch(`/api/logs?${p}`), fetch('/api/incidents/statuses')])
       const logData = await logRes.json()
       if (!logData.ok) throw new Error('logs')
@@ -432,7 +505,7 @@ export default function Logs() {
       try { const st = await stRes.json(); if (st.ok) statusMap = st.data } catch { /* ไม่มี status = OPEN */ }
       setLogs(decorate(logData.data, statusMap)); setTotal(logData.total)
     } catch {
-      setError(true); setLogs([]); setTotal(0)
+      setError(true); setLogs([]); setGroups([]); setTotal(0)
     } finally { setLoading(false) }
   }
 
@@ -453,7 +526,7 @@ export default function Logs() {
 
   useEffect(() => {
     loadLogs()
-  }, [page, pageSize, modelFilter, attackFilter, severityFilter, statusFilter, sourceIpFilter, debouncedQ, dateFrom, dateTo, excludes])
+  }, [page, pageSize, modelFilter, attackFilter, severityFilter, statusFilter, sourceIpFilter, debouncedQ, dateFrom, dateTo, excludes, view, gap])
 
   // ตัวเลือกประเภทการโจมตี = ทุก class ที่เคยพบ (ไม่ใช่แค่ที่อยู่ในหน้าปัจจุบัน)
   useEffect(() => {
@@ -502,6 +575,15 @@ export default function Logs() {
     setDateFrom(''); setDateTo('')
     setExcludes(Object.fromEntries(EXCLUDE_FIELDS.map(f => [f, []])))
     setPage(1) // reset pagination
+  }
+
+  // เจาะจากกลุ่มลงมุมมองรายการ: ตั้ง filter ให้ตรงกลุ่ม (วันที่ระดับวัน — กว้างกว่ากลุ่มเล็กน้อยได้ถ้ามีหลายครั้งในวันเดียวกัน)
+  function openGroup(g) {
+    setView('list'); setPage(1)
+    setAttackFilter(g.attack_class); setSourceIpFilter(g.source_ip)
+    setModelFilter(g.model_name === 'sqli' ? 'injection' : g.model_name)
+    setDateFrom(g.first_ts.slice(0, 10)); setDateTo(g.last_ts.slice(0, 10))
+    setExcludes(Object.fromEntries(EXCLUDE_FIELDS.map(f => [f, []])))
   }
 
   // กรอง/แบ่งหน้าทำฝั่ง server แล้ว — logs คือหน้าปัจจุบันที่ตรง filter, total คือจำนวนทั้งหมด
@@ -648,18 +730,35 @@ export default function Logs() {
             {chips.length > 1 && <button type="button" className="filter-chips-clear" onClick={clearFilters}>ล้างทั้งหมด</button>}
           </div>
         )}
-        <div style={{ fontSize: 14.5, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 10 }}>
+        <div style={{ fontSize: 14.5, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           ผลการค้นหา
-          <span style={{ background: 'var(--accent)', color: '#fff', fontSize: 12, fontWeight: 700, padding: '2px 10px', borderRadius: 999 }}>{total} รายการ</span>
+          <span style={{ background: 'var(--accent)', color: '#fff', fontSize: 12, fontWeight: 700, padding: '2px 10px', borderRadius: 999 }}>{total} {view === 'groups' ? 'กลุ่ม' : 'รายการ'}</span>
+          <span className="segmented" role="group" aria-label="มุมมอง" style={{ marginLeft: 6 }}>
+            <button type="button" className={view === 'list' ? 'selected' : ''} aria-pressed={view === 'list'} onClick={() => { setView('list'); setPage(1) }}>รายการ</button>
+            <button type="button" className={view === 'groups' ? 'selected' : ''} aria-pressed={view === 'groups'} onClick={() => { setView('groups'); setPage(1) }}>จัดกลุ่ม</button>
+          </span>
+          {view === 'groups' && (
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, fontWeight: 500, color: 'var(--text-secondary)' }}>
+              ห่างเกิน
+              <select value={gap} onChange={e => { setGap(Number(e.target.value)); setPage(1) }} aria-label="ช่วงห่างที่ถือเป็นการโจมตีครั้งใหม่" style={{ padding: '4px 8px', border: '1px solid var(--border-soft)', borderRadius: 6, background: 'var(--row-head-bg)', color: 'var(--text)', fontSize: 12.5 }}>
+                {[5, 15, 60, 240].map(m => <option key={m} value={m}>{m < 60 ? `${m} นาที` : `${m / 60} ชม.`}</option>)}
+              </select>
+              = ครั้งใหม่
+            </label>
+          )}
           <label style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, fontWeight: 500, color: 'var(--text-secondary)', cursor: 'pointer' }}>
             <input type="checkbox" checked={live} onChange={e => setLive(e.target.checked)} />
             อัปเดตสด (หน้า 1)
           </label>
         </div>
 
+        {view === 'groups' && truncated && (
+          <div role="note" className="warn-banner">มี event มากเกินกว่าจะรวมกลุ่มทั้งหมดในครั้งเดียว — แสดงเฉพาะส่วนที่ใหม่ที่สุด กลุ่มเก่าอาจไม่ครบ (ลองจำกัดช่วงเวลา)</div>
+        )}
+
         {loading ? (
           <div style={{ display: 'flex', justifyContent: 'center', padding: 40 }}><div className="spinner"></div></div>
-        ) : logs.length === 0 ? (
+        ) : (view === 'groups' ? groups.length === 0 : logs.length === 0) ? (
           <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--text-tertiary)', fontSize: 14 }}>
             <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" style={{ marginBottom: 12, opacity: .4 }}><rect x="5" y="3" width="14" height="18" rx="1"></rect><line x1="8" y1="8" x2="16" y2="8"></line><line x1="8" y1="12" x2="16" y2="12"></line><line x1="8" y1="16" x2="11" y2="16"></line></svg>
             <div>{error ? 'เชื่อมต่อ API ไม่ได้ — ไม่สามารถโหลดบันทึกเหตุการณ์' : total === 0 && chips.length === 0 ? 'ยังไม่มีเหตุการณ์ที่ตรวจพบ' : 'ไม่พบข้อมูล'}</div>
@@ -668,6 +767,9 @@ export default function Logs() {
         ) : (
           <>
             <div style={{ overflowX: 'auto' }}>
+              {view === 'groups' ? (
+                <GroupsTable groups={groups} onOpen={openGroup} onInclude={filterFor} onExclude={filterOut} />
+              ) : (
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                 <thead>
                   <tr style={{ borderBottom: '2px solid var(--border-soft)' }}>
@@ -716,10 +818,11 @@ export default function Logs() {
                   })}
                 </tbody>
               </table>
+              )}
             </div>
 
             {/* Pagination */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 4, flexWrap: 'wrap', gap: 10 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, color: 'var(--text-secondary)' }}>
                 <span>แสดง</span>
                 <select value={pageSize} onChange={e => { setPageSize(Number(e.target.value)); setPage(1) }} style={{ padding: '5px 10px', border: '1px solid var(--border-soft)', borderRadius: 6, background: 'var(--row-head-bg)', color: 'var(--text)', fontSize: 13 }}>
@@ -727,7 +830,7 @@ export default function Logs() {
                 </select>
                 <span>รายการต่อหน้า</span>
               </div>
-              <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+              <div style={{ display: 'flex', gap: 4, alignItems: 'center', flexWrap: 'wrap' }}>
                 {/* ← Prev */}
                 <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}
                   style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid var(--border-soft)', background: 'transparent',
