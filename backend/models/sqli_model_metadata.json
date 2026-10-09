@@ -1,5 +1,5 @@
 {
-  "model_file": "best_sqli.keras",
+  "model_file": "best_sqli_v2.keras",
   "max_len": 221,
   "vocab_size": 106,
   "char_level": true,

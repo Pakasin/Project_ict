@@ -48,8 +48,10 @@ async def lifespan(app: FastAPI):
     app.state.model_flow = tf.keras.models.load_model(
         str(MODELS_DIR / "best_flow_finetuned.keras")
     )
+    # SQLi v2 (เทรนบนค่าที่ sensor ส่งจริง + request ปกติของ CSIC 2010) — v1 (best_sqli_v1.keras) เก็บไว้เทียบเท่านั้น:
+    # บนข้อความ HTTP จริง v1 เตือนผิด 45% ของค่าปกติ. เรื่องเต็ม: CONTEXT.md → Known Limitations #0
     app.state.model_sqli = tf.keras.models.load_model(
-        str(MODELS_DIR / "best_sqli.keras")
+        str(MODELS_DIR / "best_sqli_v2.keras")
     )
 
     # --- โหลด scalers (fit บน train set เท่านั้น) ---

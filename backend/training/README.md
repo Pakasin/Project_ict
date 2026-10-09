@@ -40,3 +40,10 @@ DDoS/BruteForce 0, benign FA 13.5%). Full story + numbers: `CONTEXT.md`.
   only** (`.weights.h5`) + rebuilds the arch, because Kaggle's Keras could not deserialize a `.keras`
   saved by a newer host Keras (`GlorotUniform ... input_axes`).
 - Only attack your own VM/LAN.
+
+## SQLi Injection Model v2 (2026-10-09, trained locally on CPU)
+
+`train_sqli_v2.py` builds the dataset (CSIC 2010 + SecLists + generators, all passed through `backend/sqli_extract.py`), trains `best_sqli_v2.keras`
+and prints v1-vs-v2 numbers on held-out sets; `make_sqli_test_samples.py` regenerates the Test-page sample file. Raw data is **not** in the repo —
+download CSIC 2010 (`bridge4/CSIC2010_dataset_classification` on Hugging Face, parquet) and SecLists `Fuzzing/Databases/SQLi/*.txt` into `%TEMP%/sqli_raw`
+(or `$SQLI_RAW_DIR`). On Windows import tensorflow before pandas/pyarrow or the process segfaults. ~20 min for 12 epochs on 12 CPU cores.

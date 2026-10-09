@@ -1,223 +1,223 @@
 {
-  "generated_from": "SQLi test set (reconstructed seed=42), สุ่มตามสัดส่วนจริง",
-  "model": "best_sqli.keras",
-  "true_set_accuracy": 0.9969,
-  "sample_pool_accuracy": 1.0,
-  "note": "query สั้นไม่มี context มักทายผิด ตามข้อจำกัดจริง",
-  "classes": {
-    "Normal": [
-      {
-        "query": "livermore-kozlowski@hiteurope.ws",
-        "true_class": "Normal",
-        "predicted_class": "Normal",
-        "confidence": 0.0003,
-        "correct": true
-      },
-      {
-        "query": "severo",
-        "true_class": "Normal",
-        "predicted_class": "Normal",
-        "confidence": 0.0084,
-        "correct": true
-      },
-      {
-        "query": "SELECT rock ( s )  FROM addition SELECT gravity ( s ) ",
-        "true_class": "Normal",
-        "predicted_class": "Normal",
-        "confidence": 0.0003,
-        "correct": true
-      },
-      {
-        "query": "ilya",
-        "true_class": "Normal",
-        "predicted_class": "Normal",
-        "confidence": 0.0115,
-        "correct": true
-      },
-      {
-        "query": "SELECT * FROM read 3 SELECT * FROM because",
-        "true_class": "Normal",
-        "predicted_class": "Normal",
-        "confidence": 0.0003,
-        "correct": true
-      },
-      {
-        "query": "1.99281E+15",
-        "true_class": "Normal",
-        "predicted_class": "Normal",
-        "confidence": 0.0011,
-        "correct": true
-      },
-      {
-        "query": "SELECT * FROM difficult WHERE sick LIKE '%serve%'",
-        "true_class": "Normal",
-        "predicted_class": "Normal",
-        "confidence": 0.0003,
-        "correct": true
-      },
-      {
-        "query": "c/ hermanos pinzon 178",
-        "true_class": "Normal",
-        "predicted_class": "Normal",
-        "confidence": 0.0004,
-        "correct": true
-      },
-      {
-        "query": "SELECT * FROM piece WHERE twelve = 'ship'  AND City = 'excellent'",
-        "true_class": "Normal",
-        "predicted_class": "Normal",
-        "confidence": 0.0003,
-        "correct": true
-      },
-      {
-        "query": "21392437e",
-        "true_class": "Normal",
-        "predicted_class": "Normal",
-        "confidence": 0.0006,
-        "correct": true
-      },
-      {
-        "query": "SELECT * FROM mountain WHERE block BETWEEN modern09/01/1996dollar AND come15/31/1996love",
-        "true_class": "Normal",
-        "predicted_class": "Normal",
-        "confidence": 0.0003,
-        "correct": true
-      },
-      {
-        "query": "lo7ange",
-        "true_class": "Normal",
-        "predicted_class": "Normal",
-        "confidence": 0.001,
-        "correct": true
-      },
-      {
-        "query": "claros lafragueta",
-        "true_class": "Normal",
-        "predicted_class": "Normal",
-        "confidence": 0.0005,
-        "correct": true
-      },
-      {
-        "query": "SELECT MIN ( mud )  AS parallel FROM around",
-        "true_class": "Normal",
-        "predicted_class": "Normal",
-        "confidence": 0.0003,
-        "correct": true
-      },
-      {
-        "query": "SELECT * FROM vowel  WHERE layers NOT LIKE '[nearby]%'",
-        "true_class": "Normal",
-        "predicted_class": "Normal",
-        "confidence": 0.0003,
-        "correct": true
-      },
-      {
-        "query": "c/ corint, 13 11?a",
-        "true_class": "Normal",
-        "predicted_class": "Normal",
-        "confidence": 0.0022,
-        "correct": true
-      },
-      {
-        "query": "  SELECT * FROM double WHERE plane NOT IN  ( 'what', 'thus', 'travel' )  ",
-        "true_class": "Normal",
-        "predicted_class": "Normal",
-        "confidence": 0.0003,
-        "correct": true
-      },
-      {
-        "query": "hole@chicashumedas.at",
-        "true_class": "Normal",
-        "predicted_class": "Normal",
-        "confidence": 0.0006,
-        "correct": true
-      },
-      {
-        "query": "   SELECT COUNT ( coal ) , sink FROM act BY several",
-        "true_class": "Normal",
-        "predicted_class": "Normal",
-        "confidence": 0.0003,
-        "correct": true
-      }
-    ],
-    "SQLi": [
-      {
-        "query": "1\"  )   where 9295  =  9295 and 7756  =  dbms_utility.sqlid_to_sqlhash   (    (   chr  (  113  )  ||chr  (  113  )  ||chr  (  112  )  ||chr  (  106  )  ||chr  (  113  )  ||  (  select   (  case when   (  7756  =  7756  )   then 1 else 0 end  )   from dual  )  ||chr  (  113  )  ||chr  (  122  )  ||chr  (  118  )  ||chr  (  122  )  ||chr  (  113   )    )     )  --",
-        "true_class": "SQLi",
-        "predicted_class": "SQLi",
-        "confidence": 1.0,
-        "correct": true
-      },
-      {
-        "query": "1%'  )   or 2633  =  dbms_pipe.receive_message  (  chr  (  112  )  ||chr  (  65  )  ||chr  (  65  )  ||chr  (  103  )  ,5  )   and   (  '%'  =  '",
-        "true_class": "SQLi",
-        "predicted_class": "SQLi",
-        "confidence": 1.0,
-        "correct": true
-      },
-      {
-        "query": "select count  (  *  )   from rdb$fields as t1,rdb$types as t2,rdb$collations as t3,rdb$functions as t4 and    (    (   'vjdk' like 'vjdk",
-        "true_class": "SQLi",
-        "predicted_class": "SQLi",
-        "confidence": 1.0,
-        "correct": true
-      },
-      {
-        "query": "-6433%'   )    )    or 9323  =  9323#",
-        "true_class": "SQLi",
-        "predicted_class": "SQLi",
-        "confidence": 1.0,
-        "correct": true
-      },
-      {
-        "query": " AND 1  =  utl_inaddr.get_host_address   (    (   SELECT SYS.LOGIN_USER FROM DUAL   )    )    AND 'i'  =  'i",
-        "true_class": "SQLi",
-        "predicted_class": "SQLi",
-        "confidence": 1.0,
-        "correct": true
-      },
-      {
-        "query": "1\" and 6240  =    (  'qqpjq'||  (  select case 6240 when 6240 then 1 else 0 end from rdb$database  )  ||'qzvzq'  )   and \"sckh\"  =  \"sckh",
-        "true_class": "SQLi",
-        "predicted_class": "SQLi",
-        "confidence": 1.0,
-        "correct": true
-      },
-      {
-        "query": "1'   )    )    or char  (  68  )  ||char  (  69  )  ||char  (  97  )  ||char  (  85  )    =  regexp_substring  (  repeat  (  right  (  char  (  5389  )  ,0  )  ,5000000000  )  ,null  )   and    (    (   'gxgi'  =  'gxgi",
-        "true_class": "SQLi",
-        "predicted_class": "SQLi",
-        "confidence": 1.0,
-        "correct": true
-      },
-      {
-        "query": "1\" and sleep  (  5  )  #",
-        "true_class": "SQLi",
-        "predicted_class": "SQLi",
-        "confidence": 1.0,
-        "correct": true
-      },
-      {
-        "query": "-3368'   )    )    union all select 4913,4913,4913,4913,4913,4913,4913,4913,4913--",
-        "true_class": "SQLi",
-        "predicted_class": "SQLi",
-        "confidence": 1.0,
-        "correct": true
-      },
-      {
-        "query": " select * from users where id  =  '1' %!<@ union select 1,version  (    )   -- 1'",
-        "true_class": "SQLi",
-        "predicted_class": "SQLi",
-        "confidence": 1.0,
-        "correct": true
-      },
-      {
-        "query": "-4900'   )    )    or 7208  =  3236",
-        "true_class": "SQLi",
-        "predicted_class": "SQLi",
-        "confidence": 1.0,
-        "correct": true
-      }
-    ]
-  }
+ "generated_from": "CSIC 2010 test split (ไม่ได้ใช้เทรน): ค่าปกติ 3399 ค่า / ค่าผิดปกติที่มีไวยากรณ์ SQL 432 ค่า, สุ่ม seed=42",
+ "model": "best_sqli_v2.keras",
+ "true_set_accuracy": 0.9956,
+ "sample_pool_accuracy": 0.9667,
+ "note": "ML ล้วน ๆ ที่ threshold 0.75 (ไม่รวมกฎ sqli_rules และด่านโครงสร้างที่ sensor ใช้จริง) | label SQLi = request ผิดปกติของ CSIC ที่ตรง regex ไวยากรณ์ SQL ไม่ใช่ label ดั้งเดิม | ข้อมูลจาก web app ร้านค้าสเปนชุดเดียว — ไม่ใช่ traffic ของเครือข่ายนี้",
+ "classes": {
+  "Normal": [
+   {
+    "query": "modo=registro&login=aime0&password=7iA0OgI7mo&nombre=Candelario&apellidos=Sebastan Bastida&email=catenacci@grupodescansoyhogar.za&dni=97387920D&direccion=Calle Cordoneria, 46 &ciudad=Pjara&cp=48140&provincia=Soria&ntc=995",
+    "true_class": "Normal",
+    "predicted_class": "Normal",
+    "confidence": 0.9996841465472244,
+    "correct": true
+   },
+   {
+    "query": "C/ San Rafael, 144, 2?H",
+    "true_class": "Normal",
+    "predicted_class": "Normal",
+    "confidence": 0.9999749390444777,
+    "correct": true
+   },
+   {
+    "query": "6147V&direccion=Pasaje Adra, 147, 7?D&ciudad=Bustillo del Pramo de Carrin&cp=23370&provincia=Huesca&ntc=8338139974007046&B1=Registrar",
+    "true_class": "Normal",
+    "predicted_class": "Normal",
+    "confidence": 0.9996300211641937,
+    "correct": true
+   },
+   {
+    "query": "modo=registro&login=pubs&password=MENORquina&nombre=Ivanna&apellidos=Fontella Febo&email=toubus_odriscoll@granbretana.com.mg&dni=98027307L&direccion=C/ Sant Adria S/N 5-G&ciudad=Sant Antoni de Portmany&cp=47210&provincia=",
+    "true_class": "Normal",
+    "predicted_class": "Normal",
+    "confidence": 0.9976127895060927,
+    "correct": true
+   },
+   {
+    "query": "Piquer Pallns",
+    "true_class": "Normal",
+    "predicted_class": "Normal",
+    "confidence": 0.9944535689428449,
+    "correct": true
+   },
+   {
+    "query": "Mirabete Capmany",
+    "true_class": "Normal",
+    "predicted_class": "Normal",
+    "confidence": 0.9990322619560175,
+    "correct": true
+   },
+   {
+    "query": "Josa Esteba",
+    "true_class": "Normal",
+    "predicted_class": "Normal",
+    "confidence": 0.983771676197648,
+    "correct": true
+   },
+   {
+    "query": "Calle Lleida 37,",
+    "true_class": "Normal",
+    "predicted_class": "Normal",
+    "confidence": 0.9998463598167291,
+    "correct": true
+   },
+   {
+    "query": "modo=registro&login=ouellett2&password=radicalmente&nombre=Ranquel&apellidos=Orra&email=hodo@deltamarina.my&dni=18518539C&direccion=Fructuoso Alvarez, 55 &ciudad=Bayrcal&cp=17742&provincia=Palencia&ntc=3322562441567993&B1",
+    "true_class": "Normal",
+    "predicted_class": "Normal",
+    "confidence": 0.9990254093427211,
+    "correct": true
+   },
+   {
+    "query": "C/ Menendez Pelayo 2,",
+    "true_class": "Normal",
+    "predicted_class": "Normal",
+    "confidence": 0.9999385411138064,
+    "correct": true
+   },
+   {
+    "query": "modo=registro&login=ellryne&password=remoqu*e&nombre=Urias&apellidos=Cuespn Espaa&email=duryea@thw-adm.nu&dni=21303379C&direccion=Irati Errekaren, 167, 3B&ciudad=Barbadillo de Herreros&cp=42180&provincia=Cuenca&ntc=032468",
+    "true_class": "Normal",
+    "predicted_class": "Normal",
+    "confidence": 0.9989599247928709,
+    "correct": true
+   },
+   {
+    "query": "modo=registro&login=popp&password=MI21n&nombre=Baldomero&apellidos=Castellar Cutrina&email=raynaud.springson9@enmallorca.com.za&dni=90807199W&direccion=Maestro Serrano 36, &ciudad=Alcudia de Veo&cp=37175&provincia=Barcelo",
+    "true_class": "Normal",
+    "predicted_class": "Normal",
+    "confidence": 0.9995585693686735,
+    "correct": true
+   },
+   {
+    "query": "modo=entrar&login=shigeo&pwd=co3AQuI4a&remember=off&B1=Entrar",
+    "true_class": "Normal",
+    "predicted_class": "Normal",
+    "confidence": 0.9997057675209362,
+    "correct": true
+   },
+   {
+    "query": "C/ Carmen Tronchoni 23",
+    "true_class": "Normal",
+    "predicted_class": "Normal",
+    "confidence": 0.9998623804276576,
+    "correct": true
+   },
+   {
+    "query": "modo=insertar&precio=409&B1=Confirmar",
+    "true_class": "Normal",
+    "predicted_class": "Normal",
+    "confidence": 0.9999544720194535,
+    "correct": true
+   },
+   {
+    "query": "id=1&nombre=Vino Rioja&precio=39&cantidad=43&B1=Aadir al carrito",
+    "true_class": "Normal",
+    "predicted_class": "Normal",
+    "confidence": 0.9999755345961603,
+    "correct": true
+   },
+   {
+    "query": "=11103890L&direccion=Calle Trafalgar S/N, 2-C&ciudad=Paredes de Sigenza&cp=05416&provincia=Baleares (Illes)&ntc=4602024078447794&B1=Registrar",
+    "true_class": "Normal",
+    "predicted_class": "Normal",
+    "confidence": 0.9457413516938686,
+    "correct": true
+   },
+   {
+    "query": "8626447G&direccion=Iquique, 150 11?C&ciudad=Vilablareix&cp=08501&provincia=La Rioja&ntc=8496620538975243&B1=Registrar",
+    "true_class": "Normal",
+    "predicted_class": "Normal",
+    "confidence": 0.999812510664924,
+    "correct": true
+   },
+   {
+    "query": "C/ Gabriel y Galan, 9, 5B",
+    "true_class": "Normal",
+    "predicted_class": "Normal",
+    "confidence": 0.9999633109182469,
+    "correct": true
+   }
+  ],
+  "SQLi": [
+   {
+    "query": "Palafolls','0','0','0','0');waitfor delay '0:0:15';--",
+    "true_class": "SQLi",
+    "predicted_class": "SQLi",
+    "confidence": 1.0,
+    "correct": true
+   },
+   {
+    "query": "Rua Entrevias, 68 12-C'OR'a='a",
+    "true_class": "SQLi",
+    "predicted_class": "SQLi",
+    "confidence": 0.9999629855155945,
+    "correct": true
+   },
+   {
+    "query": "lenoir0@ofertachina.fj','0','0','0');waitfor delay '0:0:15';--",
+    "true_class": "SQLi",
+    "predicted_class": "SQLi",
+    "confidence": 1.0,
+    "correct": true
+   },
+   {
+    "query": "modo=insertar&precio=\" AND \"1\"=\"1&B1=Pasar por caja",
+    "true_class": "SQLi",
+    "predicted_class": "SQLi",
+    "confidence": 0.999293327331543,
+    "correct": true
+   },
+   {
+    "query": "09K&direccion=Rafael Orozco 141 12?H&ciudad=Valgan&cp=';waitfor delay '0:0:15';--&provincia=Huesca&ntc=1343607497132758&B1=Registrar",
+    "true_class": "SQLi",
+    "predicted_class": "SQLi",
+    "confidence": 0.9999377131462097,
+    "correct": true
+   },
+   {
+    "query": "modo=entrar&login=jasver9');waitfor delay '0:0:15';--&pwd=76r9v3t2&remember=off&B1=Entrar",
+    "true_class": "SQLi",
+    "predicted_class": "SQLi",
+    "confidence": 0.9999708533287048,
+    "correct": true
+   },
+   {
+    "query": "Hornos de Moncalvillo','0','0','0','0');waitfor delay '0:0:15';--",
+    "true_class": "SQLi",
+    "predicted_class": "SQLi",
+    "confidence": 1.0,
+    "correct": true
+   },
+   {
+    "query": "modo=registro&login=lrcrtp&password=a9oma39e&nombre=Angelo&apellidos=Merinas&email=ramo@whitehat.py&dni=17048909K&direccion=Rafael Orozco 141 12?H&ciudad=Valgan&cp=';waitfor delay '0:0:15';--&provincia=Huesca&ntc=13436074",
+    "true_class": "SQLi",
+    "predicted_class": "SQLi",
+    "confidence": 0.998924970626831,
+    "correct": true
+   },
+   {
+    "query": "modo=insertar&precio=AND 1=1&B1=Pasar por caja",
+    "true_class": "SQLi",
+    "predicted_class": "Normal",
+    "confidence": 0.9999317959518521,
+    "correct": false
+   },
+   {
+    "query": "modo=registro&login=hiroyuki&password=desbullar&nombre=Yoconda&apellidos=Rosas Fabila&email=saiko@enlanzarote.com.cx&dni=29372836L&direccion=Barriada Juan Xxiii, 100, &ciudad=Almargen','0');waitfor delay '0:0:15';--&cp=03",
+    "true_class": "SQLi",
+    "predicted_class": "SQLi",
+    "confidence": 0.9999299049377441,
+    "correct": true
+   },
+   {
+    "query": "modo=entrar&login=cooney&pwd=music8an0','0','0','0');waitfor delay '0:0:15';--&remember=on&B1=Entrar",
+    "true_class": "SQLi",
+    "predicted_class": "SQLi",
+    "confidence": 0.999938428401947,
+    "correct": true
+   }
+  ]
+ }
 }

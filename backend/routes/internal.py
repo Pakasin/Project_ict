@@ -7,7 +7,9 @@ nginx block endpoint นี้จากภายนอก (deny all)
 Sensors (nfstream, mitmproxy) ที่รัน root เข้าถึงผ่าน localhost เท่านั้น
 """
 
-from fastapi import APIRouter, HTTPException, Header
+import asyncio
+
+from fastapi import APIRouter, HTTPException, Header, Request
 from pydantic import BaseModel
 import os
 
@@ -22,7 +24,7 @@ router = APIRouter(tags=["internal"])
 
 class PredictionEvent(BaseModel):
     """Prediction Event — ผลลัพธ์จากการตรวจจับของ model"""
-    model_name: str       # "intrusion" | "flow" | "sqli"
+    model_name: str       # "intrusion" | "flow" | "flow_rules" | "sqli" | "sqli_rules"
     attack_class: str     # "R2L" | "U2R" | "DDoS" | "Normal" | etc.
     confidence: float     # ค่าความมั่นใจ 0.0 - 1.0
     source_ip: str        # IP ต้นทาง
@@ -75,6 +77,32 @@ async def receive_heartbeat(hb: Heartbeat, x_internal_token: str = Header(None))
     _check_token(x_internal_token)
     touch_sensor(hb.sensor, datetime.now().isoformat(), hb.info)
     return {"ok": True}
+
+
+class SqliScoreRequest(BaseModel):
+    texts: list[str]
+
+
+MAX_SQLI_SCORE_TEXTS = 64
+
+
+@router.post("/internal/sqli-score")
+async def sqli_score(body: SqliScoreRequest, request: Request, x_internal_token: str = Header(None)):
+    """ให้ sensor ที่รันโมเดลเองไม่ได้ (เช่น VM ที่ Python ไม่มี TensorFlow) ส่งข้อความมาให้คะแนน SQLi
+
+    คืนคะแนน 0–1 ต่อข้อความ (ค่าเดียวกับ predict_sqli) — ไม่เก็บข้อความ ไม่เขียน DB ตัดสินใจ/แจ้งเตือนที่ sensor
+    """
+    _check_token(x_internal_token)
+    if len(body.texts) > MAX_SQLI_SCORE_TEXTS:
+        raise HTTPException(status_code=400, detail=f"at most {MAX_SQLI_SCORE_TEXTS} texts per call")
+    model = request.app.state.model_sqli
+    if model is None:
+        raise HTTPException(status_code=503, detail="SQLi model not loaded")
+    from backend.inference import predict_sqli_batch
+    # encode_sqli_text เก็บแค่ท้าย 221 ตัวอักษรอยู่แล้ว — ตัดที่ 4096 กันข้อความยักษ์กินหน่วยความจำก่อนถึงขั้นนั้น
+    texts = [t[-4096:] for t in body.texts]
+    scores = await asyncio.to_thread(predict_sqli_batch, model, request.app.state.sqli_word_index, texts)
+    return {"ok": True, "scores": scores}
 
 
 @router.post("/internal/event", response_model=EventResponse)

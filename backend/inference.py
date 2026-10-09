@@ -312,3 +312,14 @@ def predict_sqli(
         confidence,
         {"Normal": 1.0 - confidence, "SQLi": confidence},  # ทั้งสองรวมได้ 1.0 เสมอ
     )
+
+
+def predict_sqli_batch(model, word_index: dict, texts: list[str]) -> list[float]:
+    """ให้คะแนน SQLi หลายข้อความด้วย model.predict ครั้งเดียว (1 request มีหลาย parameter)
+
+    ผลแต่ละตัวเท่ากับ predict_sqli(...)[1] ของข้อความนั้นทุกประการ — แค่รวม batch เพื่อไม่ให้ proxy ช้า
+    """
+    if not texts:
+        return []
+    batch = np.concatenate([encode_sqli_text(word_index, t) for t in texts], axis=0)  # (n, 221)
+    return [float(c) for c in model.predict(batch, verbose=0)[:, 0]]
