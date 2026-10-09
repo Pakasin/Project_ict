@@ -185,7 +185,8 @@ export default function ThreatInspectModal({ event, onClose }) {
               {/* แสดง dataset ที่ใช้ train model ตามชื่อโมเดล */}
               {event.model_name === 'intrusion' ? 'NSL-KDD SimpleRNN (41 feats)' :
                event.model_name === 'flow' ? 'CIC-IDS2018 LSTM v2 (52 feats)' :
-               event.model_name === 'flow_rules' ? 'Rate rules (no ML model)' : 'Deep Embedding LSTM (SQLi)'}
+               event.model_name === 'flow_rules' ? 'Rate rules (no ML model)' :
+               event.model_name === 'sqli_rules' ? 'SQLi signature rules (no ML model)' : 'Deep Embedding LSTM (SQLi)'}
             </span>
           </div>
         </div>
@@ -242,6 +243,27 @@ export default function ThreatInspectModal({ event, onClose }) {
                 </div>
               ))}
             </div>
+          </div>
+        )}
+
+        {/* ── Log: ประวัติการดำเนินการ (audit) + log ดิบของ event ── */}
+        {detail && (
+          <div>
+            <div className="card-title" style={{ marginBottom: 'var(--space-2)' }}>Log</div>
+            {detail.audit?.length > 0 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 10 }}>
+                {detail.audit.map((a, i) => (
+                  <div key={i} style={{ display: 'flex', gap: 10, fontSize: 12 }}>
+                    <span className="text-muted mono">{formatTime(a.timestamp)}</span>
+                    <span>{a.username}</span>
+                    <span style={{ flex: 1 }}>{a.action}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            <pre className="mono" style={{ margin: 0, padding: '10px 12px', borderRadius: 8, background: 'var(--row-head-bg)', fontSize: 11.5, maxHeight: 160, overflow: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
+              {JSON.stringify(detail.event, null, 2)}
+            </pre>
           </div>
         )}
 

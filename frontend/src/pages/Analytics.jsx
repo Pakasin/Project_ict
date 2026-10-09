@@ -145,7 +145,7 @@ export default function Analytics() {
 
   // ── ข้อมูลประสิทธิภาพโมเดล AI แต่ละตัว ──
   // แสดงในส่วน "ข้อมูลประสิทธิภาพโมเดล" ด้านล่าง เป็นการ์ด 3 ใบ (INTRUSION, FLOW, SQLI)
-  const modelAlerts = (k) => stats?.by_model.filter(m => m.key === k || (k === 'flow' && m.key === 'flow_rules')).reduce((n, m) => n + m.count, 0) ?? 0;
+  const modelAlerts = (k) => stats?.by_model.filter(m => m.key === k || (k === 'flow' && m.key === 'flow_rules') || (k === 'sqli' && m.key === 'sqli_rules')).reduce((n, m) => n + m.count, 0) ?? 0;
   const modelLoaded = (k) => (modelInfo?.ok ? !!modelInfo[k]?.loaded : null);  // null = ไม่ทราบ
   const telemetryData = [
     { tag: 'INTRUSION', key: 'intrusion', name: 'Intrusion Model (NSL-KDD, SimpleRNN)', desc: 'ตรวจจับ R2L/U2R — ปิดบนทราฟฟิกสดโดยค่าเริ่มต้น (วัด content features ด้วย nfstream ไม่ได้) ใช้ผ่านหน้า Test',

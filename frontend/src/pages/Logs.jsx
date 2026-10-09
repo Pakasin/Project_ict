@@ -281,13 +281,33 @@ function formatTH(ts) {
   catch { return ts }
 }
 
+// ฟิลด์ที่ Exclude ได้ (ชื่อต้องตรง exclude_<field> ของ GET /api/logs)
+const EXCLUDE_FIELDS = ['attack_class', 'source_ip']
+const EXCLUDE_LABEL = { attack_class: 'ไม่รวมประเภท', source_ip: 'ไม่รวมแหล่งที่มา' }
+
+/**
+ * CellFilter — ปุ่ม "กรองเข้า (+)" / "กรองออก (−)" ข้างค่าในตาราง (โผล่เมื่อ hover แถวหรือโฟกัสด้วยคีย์บอร์ด)
+ * หยุด click ไม่ให้ทะลุไปเปิด modal ของแถว
+ */
+function CellFilter({ field, value, onInclude, onExclude }) {
+  const stop = (fn) => (e) => { e.stopPropagation(); fn(field, value) }
+  return (
+    <span className="cell-filter">
+      <button type="button" onClick={stop(onInclude)} aria-label={`กรองเฉพาะ ${value}`} title="กรองเฉพาะค่านี้">+</button>
+      <button type="button" onClick={stop(onExclude)} aria-label={`ไม่รวม ${value}`} title="ไม่รวมค่านี้">−</button>
+    </span>
+  )
+}
+
 /**
  * Logs — หน้าดู Security Event Logs ทั้งหมด (Search, Filter, Paginate, Export)
  */
 export default function Logs() {
   const { t } = useApp()
   const navigate = useNavigate()
-  const [params] = useSearchParams()  // drill-down จาก Dashboard: ?attack_class=&source_ip=&model=&severity=
+  // filter ทั้งหมดผูกกับ URL: ?model=&attack_class=&severity=&status=&source_ip=&q=&from=&to=&exclude_attack_class=&exclude_source_ip=
+  // (drill-down จาก Dashboard ใช้ชุดเดียวกัน, ก๊อป URL ส่งให้คนอื่นแล้วเห็นมุมมองเดียวกัน)
+  const [params, setParams] = useSearchParams()
 
   // logs: ดึงจาก /api/logs จริง (ไม่มี mock) — เติม ref / sevKey / statusKey ให้ตารางใช้
   const [logs, setLogs] = useState([])   // เฉพาะหน้าปัจจุบัน (server-side paging)
@@ -302,21 +322,25 @@ export default function Logs() {
   const [selectedEvent, setSelectedEvent] = useState(null) // event ที่คลิกเปิด ThreatInspectModal
 
   // ── Filter State — ตัวกรองทั้งหมดใช้ตรวจ logic ใน filtered array ───────────────
-  const [searchQuery,    setSearchQuery]    = useState('')  // ค้นหา: source_ip, attack_class, model, ref
+  const [searchQuery,    setSearchQuery]    = useState(params.get('q') || '')  // ค้นหา: source_ip, attack_class, model, ref
   const [modelFilter,    setModelFilter]    = useState(params.get('model') || '')  // โมเดล (Intrusion/Flow/Injection LSTM)
   const [attackFilter,   setAttackFilter]   = useState(params.get('attack_class') || '')  // ประเภทการโจมตี
   const [severityFilter, setSeverityFilter] = useState(params.get('severity') || '')  // ระดับความรุนแรง (CRITICAL/HIGH/MEDIUM/LOW)
-  const [statusFilter,   setStatusFilter]   = useState('')  // สถานะ (BLOCKED/INVESTIGATING/MITIGATED)
+  const [statusFilter,   setStatusFilter]   = useState(params.get('status') || '')  // สถานะ (BLOCKED/INVESTIGATING/MITIGATED)
   const [sourceIpFilter, setSourceIpFilter] = useState(params.get('source_ip') || '')  // กรอง Source IP
-  const [dateFrom,       setDateFrom]       = useState('')  // วันที่เริ่มต้น (ISO string)
-  const [dateTo,         setDateTo]         = useState('')  // วันที่สิ้นสุด (ISO string)
+  const [dateFrom,       setDateFrom]       = useState(params.get('from') || '')  // วันที่เริ่มต้น (YYYY-MM-DD)
+  const [dateTo,         setDateTo]         = useState(params.get('to') || '')  // วันที่สิ้นสุด (YYYY-MM-DD)
+  // ค่าที่ "กรองออก" (Exclude) แยกตามฟิลด์ — กดปุ่ม − ข้างค่าในตาราง
+  const [excludes, setExcludes] = useState(() => Object.fromEntries(
+    EXCLUDE_FIELDS.map(f => [f, (params.get(`exclude_${f}`) || '').split(',').filter(Boolean)])
+  ))
 
   const [pageSize, setPageSize] = useState(10) // รายการต่อหน้า (เลือกได้ที่ท้ายตาราง)
   const [live, setLive] = useState(true)        // รีเฟรชอัตโนมัติเมื่อมี event ใหม่ (เฉพาะหน้า 1)
   const [classOptions, setClassOptions] = useState([]) // ประเภทการโจมตีทั้งหมดที่เคยพบ (จาก /api/stats)
 
   // search ดีเลย์ 300ms เพื่อไม่ยิง API ทุกตัวอักษร
-  const [debouncedQ, setDebouncedQ] = useState('')
+  const [debouncedQ, setDebouncedQ] = useState(searchQuery.trim())
   useEffect(() => {
     const id = setTimeout(() => { setDebouncedQ(searchQuery.trim()); setPage(1) }, 300)
     return () => clearTimeout(id)
@@ -333,8 +357,58 @@ export default function Logs() {
     if (debouncedQ)     p.set('q', debouncedQ)
     if (dateFrom)       p.set('since', dateFrom.slice(0, 10))
     if (dateTo)         p.set('until', dateTo.slice(0, 10) + 'T23:59:59')
+    for (const f of EXCLUDE_FIELDS) if (excludes[f].length) p.set(`exclude_${f}`, excludes[f].join(','))
     return p
   }
+
+  // ── Filter / Exclude จากค่าในตาราง (แบบ Cloudflare) ──
+  // ค่าเดียวกันอยู่ได้ฝั่งเดียว: Filter ค่าที่เคย Exclude = เอาออกจาก Exclude (และกลับกัน)
+  function filterFor(field, value) {
+    playSound('click')
+    setExcludes(ex => ({ ...ex, [field]: ex[field].filter(v => v !== value) }))
+    if (field === 'attack_class') setAttackFilter(value)
+    if (field === 'source_ip') setSourceIpFilter(value)
+    setPage(1)
+  }
+  function filterOut(field, value) {
+    playSound('click')
+    if (field === 'attack_class' && attackFilter === value) setAttackFilter('')
+    if (field === 'source_ip' && sourceIpFilter === value) setSourceIpFilter('')
+    setExcludes(ex => ex[field].includes(value) ? ex : { ...ex, [field]: [...ex[field], value] })
+    setPage(1)
+  }
+  function removeExclude(field, value) {
+    setExcludes(ex => ({ ...ex, [field]: ex[field].filter(v => v !== value) })); setPage(1)
+  }
+
+  // filter ที่ใช้อยู่ → ชิปเหนือผลลัพธ์ (กด × ลบทีละอัน)
+  const chips = [
+    modelFilter    && { id: 'model',    label: 'โมเดล',        value: modelFilter,    clear: () => setModelFilter('') },
+    attackFilter   && { id: 'attack',   label: 'ประเภท',       value: attackFilter,   clear: () => setAttackFilter('') },
+    sourceIpFilter && { id: 'ip',       label: 'แหล่งที่มา',    value: sourceIpFilter, clear: () => setSourceIpFilter('') },
+    severityFilter && { id: 'sev',      label: 'ความรุนแรง',    value: SEV_CONFIG[severityFilter]?.label || severityFilter, clear: () => setSeverityFilter('') },
+    statusFilter   && { id: 'status',   label: 'สถานะ',        value: STATUS_CONFIG[statusFilter]?.label || statusFilter, clear: () => setStatusFilter('') },
+    debouncedQ     && { id: 'q',        label: 'ค้นหา',        value: debouncedQ,     clear: () => setSearchQuery('') },
+    (dateFrom || dateTo) && { id: 'date', label: 'ช่วงเวลา',   value: `${dateFrom || '…'} – ${dateTo || '…'}`, clear: () => { setDateFrom(''); setDateTo('') } },
+    ...EXCLUDE_FIELDS.flatMap(f => excludes[f].map(v => ({
+      id: `x-${f}-${v}`, exclude: true, label: EXCLUDE_LABEL[f], value: v, clear: () => removeExclude(f, v),
+    }))),
+  ].filter(Boolean)
+
+  // เขียน filter ลง URL (replace ไม่เพิ่ม history ทุกครั้งที่พิมพ์) เพื่อแชร์/รีเฟรชแล้วได้มุมมองเดิม
+  useEffect(() => {
+    const p = new URLSearchParams()
+    if (modelFilter)    p.set('model', modelFilter)
+    if (attackFilter)   p.set('attack_class', attackFilter)
+    if (severityFilter) p.set('severity', severityFilter)
+    if (statusFilter)   p.set('status', statusFilter)
+    if (sourceIpFilter) p.set('source_ip', sourceIpFilter)
+    if (debouncedQ)     p.set('q', debouncedQ)
+    if (dateFrom)       p.set('from', dateFrom)
+    if (dateTo)         p.set('to', dateTo)
+    for (const f of EXCLUDE_FIELDS) if (excludes[f].length) p.set(`exclude_${f}`, excludes[f].join(','))
+    setParams(p, { replace: true })
+  }, [modelFilter, attackFilter, severityFilter, statusFilter, sourceIpFilter, debouncedQ, dateFrom, dateTo, excludes])
 
   function decorate(rows, statusMap) {
     return rows.map(e => ({
@@ -379,7 +453,7 @@ export default function Logs() {
 
   useEffect(() => {
     loadLogs()
-  }, [page, pageSize, modelFilter, attackFilter, severityFilter, statusFilter, sourceIpFilter, debouncedQ, dateFrom, dateTo])
+  }, [page, pageSize, modelFilter, attackFilter, severityFilter, statusFilter, sourceIpFilter, debouncedQ, dateFrom, dateTo, excludes])
 
   // ตัวเลือกประเภทการโจมตี = ทุก class ที่เคยพบ (ไม่ใช่แค่ที่อยู่ในหน้าปัจจุบัน)
   useEffect(() => {
@@ -426,6 +500,7 @@ export default function Logs() {
     setSearchQuery(''); setModelFilter(''); setAttackFilter('')
     setSeverityFilter(''); setStatusFilter(''); setSourceIpFilter('')
     setDateFrom(''); setDateTo('')
+    setExcludes(Object.fromEntries(EXCLUDE_FIELDS.map(f => [f, []])))
     setPage(1) // reset pagination
   }
 
@@ -483,6 +558,7 @@ export default function Logs() {
               <option value="flow">Flow LSTM (CSE-CIC-IDS2018)</option>
               <option value="flow_rules">Rate rules (flow_rules)</option>
               <option value="injection">Injection LSTM (SQLi)</option>
+              <option value="sqli_rules">SQLi signature rules (sqli_rules)</option>
             </select>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -559,6 +635,19 @@ export default function Logs() {
 
       {/* ── Results Table ── */}
       <div className="card elev-sm" style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+        {/* filter ที่ใช้อยู่ — กด × ลบทีละอัน, ชิปเส้นประ = กรองออก */}
+        {chips.length > 0 && (
+          <div className="filter-chips" role="list" aria-label="ตัวกรองที่ใช้อยู่">
+            {chips.map(c => (
+              <span key={c.id} role="listitem" className={`filter-chip${c.exclude ? ' exclude' : ''}`}>
+                <span className="filter-chip-label">{c.label}</span>
+                <span className="filter-chip-value mono">{c.value}</span>
+                <button type="button" aria-label={`ลบตัวกรอง ${c.label} ${c.value}`} onClick={() => { playSound('click'); c.clear(); setPage(1) }}>×</button>
+              </span>
+            ))}
+            {chips.length > 1 && <button type="button" className="filter-chips-clear" onClick={clearFilters}>ล้างทั้งหมด</button>}
+          </div>
+        )}
         <div style={{ fontSize: 14.5, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 10 }}>
           ผลการค้นหา
           <span style={{ background: 'var(--accent)', color: '#fff', fontSize: 12, fontWeight: 700, padding: '2px 10px', borderRadius: 999 }}>{total} รายการ</span>
@@ -573,7 +662,7 @@ export default function Logs() {
         ) : logs.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--text-tertiary)', fontSize: 14 }}>
             <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" style={{ marginBottom: 12, opacity: .4 }}><rect x="5" y="3" width="14" height="18" rx="1"></rect><line x1="8" y1="8" x2="16" y2="8"></line><line x1="8" y1="12" x2="16" y2="12"></line><line x1="8" y1="16" x2="11" y2="16"></line></svg>
-            <div>{error ? 'เชื่อมต่อ API ไม่ได้ — ไม่สามารถโหลดบันทึกเหตุการณ์' : total === 0 && !modelFilter && !attackFilter && !severityFilter && !statusFilter && !sourceIpFilter && !debouncedQ && !dateFrom && !dateTo ? 'ยังไม่มีเหตุการณ์ที่ตรวจพบ' : 'ไม่พบข้อมูล'}</div>
+            <div>{error ? 'เชื่อมต่อ API ไม่ได้ — ไม่สามารถโหลดบันทึกเหตุการณ์' : total === 0 && chips.length === 0 ? 'ยังไม่มีเหตุการณ์ที่ตรวจพบ' : 'ไม่พบข้อมูล'}</div>
             <button onClick={clearFilters} style={{ marginTop: 14, padding: '8px 18px', borderRadius: 8, border: '1px solid var(--border-soft)', background: 'transparent', cursor: 'pointer', color: 'var(--text-secondary)', fontSize: 13 }}>ล้างตัวกรอง</button>
           </div>
         ) : (
@@ -606,9 +695,11 @@ export default function Logs() {
                         </td>
                         <td style={{ padding: '14px 14px', verticalAlign: 'middle' }}>
                           <span style={{ background: atk.bg, color: atk.color, fontSize: 12.5, fontWeight: 700, padding: '5px 12px', borderRadius: 999 }}>{log.attack_class}</span>
+                          <CellFilter field="attack_class" value={log.attack_class} onInclude={filterFor} onExclude={filterOut} />
                         </td>
                         <td style={{ padding: '14px 14px', verticalAlign: 'middle' }}>
                           <span className="mono" style={{ fontSize: 12.5 }}>{log.source_ip}</span>
+                          <CellFilter field="source_ip" value={log.source_ip} onInclude={filterFor} onExclude={filterOut} />
                         </td>
                         <td style={{ padding: '14px 14px', verticalAlign: 'middle' }}>
                           <span style={{ background: sev.bg, color: sev.color, fontSize: 12, fontWeight: 700, padding: '5px 12px', borderRadius: 999, display: 'flex', alignItems: 'center', gap: 6, width: 'fit-content' }}>

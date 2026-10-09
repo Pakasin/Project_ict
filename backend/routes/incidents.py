@@ -20,6 +20,7 @@ from backend.db import (
     get_incident_statuses,
     add_audit_log,
     get_audit_logs,
+    get_audit_logs_for_event,
     block_ip,
     unblock_ip,
     get_blocked_ips,
@@ -107,6 +108,7 @@ async def event_detail(event_id: int):
             "notes": get_incident_notes(event_id),
             "assignee": get_incident_assignees().get(event_id),
             "related": get_related_events(ev["source_ip"], event_id),
+            "audit": get_audit_logs_for_event(event_id),
         },
     }
 

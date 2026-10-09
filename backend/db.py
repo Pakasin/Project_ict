@@ -6,6 +6,7 @@ Schema ออกแบบให้ migrate ไป PostgreSQL ได้ (ไม�
 """
 
 import sqlite3  # ไลบรารี SQLite ใน Python standard library ไม่ต้องติดตั้งเพิ่ม
+import re
 import os       # ใช้ดึง path ของไฟล์ database ให้ถูกต้องไม่ว่าจะรันจาก directory ไหน
 
 # ── Path ของไฟล์ฐานข้อมูล ──
@@ -185,6 +186,11 @@ async def save_prediction_event(
 SEVERITY_RANGE = {"CRITICAL": (0.95, 1.0001), "HIGH": (0.90, 0.95), "MEDIUM": (0.80, 0.90), "LOW": (0.0, 0.80)}
 
 
+# คอลัมน์ที่ใช้ exclude ได้ — ชื่อคอลัมน์ถูกต่อเข้า SQL จึงต้องเป็นรายการตายตัวนี้เท่านั้น
+EXCLUDABLE_COLUMNS = ("model_name", "attack_class", "source_ip")
+FULL_IP_RE = re.compile(r"^(\d{1,3}(\.\d{1,3}){3}|[0-9a-fA-F:]*:[0-9a-fA-F:]+)$")
+
+
 def _events_where(
     model_name: str | None,
     attack_class: str | None,
@@ -195,10 +201,19 @@ def _events_where(
     q: str | None,
     severity: str | None = None,
     status: str | None = None,
+    exclude: dict[str, list[str]] | None = None,
 ) -> tuple[str, list]:
-    """สร้าง WHERE clause (parameterized) ที่ใช้ร่วมกันระหว่างดึงรายการและนับ total"""
+    """สร้าง WHERE clause (parameterized) ที่ใช้ร่วมกันระหว่างดึงรายการและนับ total
+
+    exclude: {"model_name"|"attack_class"|"source_ip": [ค่าที่ไม่เอา, ...]} ตรงแบบ exact (NOT IN)
+    """
     where = " WHERE 1=1"
     params: list = []
+    for col in EXCLUDABLE_COLUMNS:
+        values = (exclude or {}).get(col)
+        if values:
+            where += f" AND {col} NOT IN ({','.join('?' * len(values))})"
+            params.extend(values)
     if model_name:
         where += " AND model_name = ?"
         params.append(model_name)
@@ -214,8 +229,13 @@ def _events_where(
         where += " AND timestamp <= ?"
         params.append(until)
     if source_ip:
-        where += " AND source_ip LIKE ?"
-        params.append(f"%{source_ip}%")
+        if FULL_IP_RE.match(source_ip):
+            # IP ครบ = ตรงแบบ exact ("1.2.3.4" ต้องไม่ไปติด "1.2.3.45")
+            where += " AND source_ip = ?"
+            params.append(source_ip)
+        else:
+            where += " AND source_ip LIKE ?"  # พิมพ์ไม่ครบ = ค้นแบบ substring
+            params.append(f"%{source_ip}%")
     if q:
         where += " AND (source_ip LIKE ? OR attack_class LIKE ? OR model_name LIKE ? OR id = ?)"
         # "EVT-42" หรือ "42" = ค้นด้วยรหัสอ้างอิง (ตรง ref ที่ frontend แสดง)
@@ -245,9 +265,10 @@ def get_prediction_events(
     q: str | None = None,
     severity: str | None = None,
     status: str | None = None,
+    exclude: dict[str, list[str]] | None = None,
 ) -> tuple[list[dict], int]:
     """ดึง Prediction Events (ใหม่→เก่า) พร้อม filters/pagination คืน (rows, total ที่ตรง filter)"""
-    where, params = _events_where(model_name, attack_class, alerts_only, since, until, source_ip, q, severity, status)
+    where, params = _events_where(model_name, attack_class, alerts_only, since, until, source_ip, q, severity, status, exclude)
     conn = get_db()
     try:
         total = conn.execute("SELECT COUNT(*) FROM prediction_events" + where, params).fetchone()[0]
@@ -426,6 +447,20 @@ def get_audit_logs(limit: int = 50) -> list[dict]:
     try:
         rows = conn.execute(
             "SELECT * FROM audit_log ORDER BY timestamp DESC, id DESC LIMIT ?", (limit,)
+        ).fetchall()
+        return [dict(row) for row in rows]
+    finally:
+        conn.close()
+
+
+def get_audit_logs_for_event(event_id: int) -> list[dict]:
+    """ประวัติการดำเนินการของ operator ที่เกี่ยวกับ event นี้ (target ขึ้นต้น "Ref #<id>")"""
+    conn = get_db()
+    try:
+        rows = conn.execute(
+            "SELECT username, action, target, timestamp FROM audit_log "
+            "WHERE target = ? OR target LIKE ? ORDER BY timestamp DESC, id DESC",
+            (f"Ref #{event_id}", f"Ref #{event_id} (%"),
         ).fetchall()
         return [dict(row) for row in rows]
     finally:

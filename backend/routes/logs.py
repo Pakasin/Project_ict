@@ -50,8 +50,19 @@ async def get_logs(
     q: str | None = Query(default=None, description="ค้นหา substring ใน source_ip / attack_class / model_name"),
     severity: str | None = Query(default=None, description="CRITICAL | HIGH | MEDIUM | LOW (จาก confidence)"),
     status: str | None = Query(default=None, description="OPEN | INVESTIGATING | MITIGATED"),
+    exclude_model_name: str | None = Query(default=None, description="ไม่เอา model เหล่านี้ (คั่นด้วย ,)"),
+    exclude_attack_class: str | None = Query(default=None, description="ไม่เอา attack class เหล่านี้ (คั่นด้วย ,)"),
+    exclude_source_ip: str | None = Query(default=None, description="ไม่เอา source IP เหล่านี้ (คั่นด้วย , ตรงแบบ exact)"),
 ):
     """ดึง Prediction Events พร้อม filters และ pagination"""
+    exclude = {
+        col: [v for v in (raw or "").split(",") if v]
+        for col, raw in (
+            ("model_name", exclude_model_name),
+            ("attack_class", exclude_attack_class),
+            ("source_ip", exclude_source_ip),
+        )
+    }
     events, total = get_prediction_events(
         limit=limit,
         offset=offset,
@@ -64,6 +75,7 @@ async def get_logs(
         q=q,
         severity=severity,
         status=status,
+        exclude=exclude,
     )
     for e in events:
         e["mitre"] = technique_id_for(e["attack_class"])
