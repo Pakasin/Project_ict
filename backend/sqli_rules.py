@@ -33,6 +33,11 @@ _RULES: list[tuple[str, re.Pattern]] = [
      r"""['"`]{2}\s*=\s*['"`])"""),
     ("sqlmap_numeric_probe",        # where 9295 = 9295 and ...   or 9323 = 9323  — เลขสุ่ม ≥3 หลักเท่ากันสองฝั่ง (ลายเซ็น sqlmap)
      r"\b(?:where|and|or|having)\s+(\d{3,})\s*=\s*\1(?!\d)"),
+    ("numeric_boolean_blind",       # 1)) AND 2274=3230   1 AND 6439=6717  — เลขสุ่มคนละตัวสองฝั่ง: sqlmap ยิงคู่
+     # true-branch (เลขเท่ากัน ด้านบน) กับ false-branch (เลขต่างกัน) เพื่อ diff response — จับคู่ที่เลขต่างกัน
+     # ต่อให้ไม่มี SQL keyword เลยก็ตาม (วัดจริงจาก sqlmap --level=3 --risk=2: หลุดด่าน looks_like_sql() เดิม
+     # เพราะไม่มีคำใน _SQL_WORD เลย แก้ 2026-10-10 หลัง sqlmap live test เจอ 38/1212 payload หลุด)
+     r"\b(?:and|or|having)\s*\(*\s*\d{3,}\s*=\s*\d{3,}(?!\d)"),
     ("char_chain_obfuscation",      # char(68)||char(69)||char(97)  — ประกอบสตริงจากรหัสตัวอักษร
      r"(?:\bchr?\s*\(\s*\d+\s*\)\s*(?:\|\||\+|,)\s*){2,}\bchr?\s*\("),
     ("heavy_query_join",            # from a as t1,b as t2,c as t3 — นับแถวแบบ heavy query ของ sqlmap
@@ -100,7 +105,10 @@ def match_rules(text: str) -> RuleHit | None:
 # (เหตุผลและตัวเลข: backend/sqli_detect.py, CONTEXT.md Known Limitations #0)
 _SQL_WORD = re.compile(
     r"\b(?:select|union|insert|update|delete|drop|exec(?:ute)?|sleep|benchmark|waitfor|concat|chr|char|"
-    r"substr(?:ing)?|cast|convert|declare|having|where|dbms_\w+|information_schema|rlike|regexp)\b", re.I)
+    r"substr(?:ing)?|cast|convert|declare|having|where|dbms_\w+|information_schema|rlike|regexp|"
+    # เพิ่ม 2026-10-10 หลัง sqlmap live test: ฟังก์ชัน blind-SQLi ที่ --level=3 --risk=2 ใช้จริง
+    # แต่ไม่อยู่ใน list เดิมเลย ทำให้ looks_like_sql() ปัดตกก่อนถึงโมเดล
+    r"make_set|iif|case\s+when)\b", re.I)
 _SQL_SYNTAX = re.compile(r"""['"`;)]|--|#|/\*|\b\d{3,}\s*=\s*\d{3,}|\bor\b|\band\b""", re.I)
 
 

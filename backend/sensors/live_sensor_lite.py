@@ -19,6 +19,15 @@ from collections import defaultdict, deque
 from datetime import datetime, timezone
 import requests
 
+# ปิด rate-rules layer ได้ทั้งหมด (FLOW_RULES_ENABLED=false) — ให้ Flow Model (LSTM) ตัดสินเองล้วน ๆ
+# ใช้ตอน demo ที่ต้องโชว์ผล ML จริง ไม่ใช่ threshold นับ flow ค่า default=true เพราะบน traffic จริง LSTM
+# เพียงอย่างเดียวพลาดสูง (ดู CONTEXT.md Known Limitations — DoS recall 0.13, DDoS/BruteForce ≈0)
+FLOW_RULES_ENABLED = os.getenv("FLOW_RULES_ENABLED", "true").lower() not in ("false", "0", "no")
+# กันสแปม: เตือนซ้ำเหตุการณ์เดียวกัน (model, class, src) รัวทุก window ระหว่างการโจมตีที่ยังดำเนินอยู่
+# ต่อเนื่องยาว ๆ — ไม่มี cooldown ตัวนี้มาก่อน (rate_rules มีแต่ LSTM ไม่มี) ทำให้ 1 DoS flood ยาว 20s
+# กลายเป็นหลักพัน event แถวซ้ำ ท่วม dashboard/กราฟจนมองเหตุการณ์อื่นไม่เห็น
+ALERT_COOLDOWN_S = float(os.getenv("FLOW_ALERT_COOLDOWN_S", "20"))
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 from backend.flow_features import (  # noqa: E402
     nfstream_flow_to_primitives, nfstream_flow_meta,
@@ -54,8 +63,15 @@ def main():
     PRED_EVERY = 25  # predict at most 1 window per source per 25 flows
     done = set()
     n_flows = 0
+    last_alert_at = {}   # (model_name, attack_class, src) -> last posted ts — see ALERT_COOLDOWN_S
 
     def post_event(model_name, attack_class, conf, src, dst_ip=None, dst_port=None, proto=None, nbytes=None):
+        key = (model_name, attack_class, src)
+        now_t = time.monotonic()
+        last = last_alert_at.get(key)
+        if last is not None and now_t - last < ALERT_COOLDOWN_S:
+            return
+        last_alert_at[key] = now_t
         try:
             sess.post(ev_url, headers=hdr, timeout=3, json={
                 "model_name": model_name, "attack_class": attack_class,
@@ -77,8 +93,9 @@ def main():
             src_ip, start_ms, dst_ip, dst_port = nfstream_flow_meta(flow)
             prims = nfstream_flow_to_primitives(flow)
             end_s = float(flow.bidirectional_last_seen_ms) / 1000.0
-            for al in rr.observe(end_s, src_ip, dst_ip, int(dst_port)):
-                post_event("flow_rules", al.attack_class, 1.0, al.source_ip, dst_ip, int(dst_port), PROTO.get(int(flow.protocol), str(flow.protocol)), int(flow.bidirectional_bytes))
+            if FLOW_RULES_ENABLED:
+                for al in rr.observe(end_s, src_ip, dst_ip, int(dst_port)):
+                    post_event("flow_rules", al.attack_class, al.confidence, al.source_ip, dst_ip, int(dst_port), PROTO.get(int(flow.protocol), str(flow.protocol)), int(flow.bidirectional_bytes))
             b = buf[src_ip]
             b.append((prims, float(start_ms), dst_ip, int(dst_port)))
             if len(b) == WINDOW and n_flows - last_pred.get(src_ip, -10**9) >= PRED_EVERY:

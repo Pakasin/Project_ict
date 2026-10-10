@@ -14,6 +14,7 @@ CyberShield — SQLi request analysis (สกัด → กฎ signature → Inj
 requests / 10,800 benign): ด่านนี้ลด false alarm บน corpus มือเขียนจาก 4/33 เหลือ 1/33 โดยไม่เสีย recall
 """
 
+import os
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Literal
@@ -22,6 +23,11 @@ from backend.sqli_extract import request_candidates
 from backend.sqli_rules import looks_like_sql, match_rules
 
 Scorer = Callable[[list[str]], list[float]]
+
+# ปิด signature-rule layer ได้ทั้งหมด (SQLI_RULES_ENABLED=false) — ให้ Injection Model ตัดสินเองล้วน ๆ
+# ใช้ตอน demo/ประเมินที่ต้องโชว์ผลงาน ML จริง ไม่ใช่ regex แทรก ค่า default=true เพราะกฎช่วยลด false
+# negative ของ payload คลาสสิกที่โมเดลพลาด (ดู docstring ด้านบน) — ปิดแล้ว recall ของโมเดลล้วนต่ำกว่านี้
+RULES_ENABLED = os.getenv("SQLI_RULES_ENABLED", "true").lower() not in ("false", "0", "no")
 
 
 @dataclass(frozen=True)
@@ -49,11 +55,12 @@ def analyze_with_scorer(
     if not candidates:
         return None
 
-    # กฎก่อน: แม่นยำสูง ไม่มี false alarm จากเครื่องหมายวรรคตอน และถูกกว่าโมเดล
-    for c in candidates:
-        hit = match_rules(c)
-        if hit:
-            return SqliVerdict("rules", 1.0, c, rule=hit.rule)
+    # กฎก่อน: แม่นยำสูง ไม่มี false alarm จากเครื่องหมายวรรคตอน และถูกกว่าโมเดล (ปิดได้ด้วย SQLI_RULES_ENABLED=false)
+    if RULES_ENABLED:
+        for c in candidates:
+            hit = match_rules(c)
+            if hit:
+                return SqliVerdict("rules", 1.0, c, rule=hit.rule)
 
     if score_fn is not None:
         sqlish = [c for c in candidates if looks_like_sql(c)]

@@ -40,6 +40,8 @@ class RateAlert:
     rule: str
     source_ip: str      # DDoS: dst ที่ถูกโจมตี (มีหลาย source)
     detail: str
+    confidence: float = 1.0   # ไม่ใช่ความน่าจะเป็นจริง (rule ไม่มี) แต่สเกลตามว่าเกิน threshold ไปเท่าไหร่
+                              # กัน false-impression ว่าทุก alert "วิกฤต" เท่ากันหมด — ดู _scale()
 
 
 class RateRuleDetector:
@@ -69,6 +71,19 @@ class RateRuleDetector:
         while d and (d[0][0] if tuples else d[0]) < lo:
             d.popleft()
 
+    @staticmethod
+    def _scale(count: int, threshold: int, cap_at_x: float = 3.0) -> float:
+        """count เท่า threshold พอดี → 0.80 (MEDIUM เริ่มต้น ไม่ใช่ CRITICAL ทันทีที่เพิ่งข้าม)
+        count ≥ cap_at_x เท่า threshold → 1.0 (CRITICAL) เส้นตรงระหว่างนั้น
+        เหตุผล: rule ไม่มี confidence จริงอยู่แล้ว แต่ "เพิ่งข้าม threshold นิดเดียว" กับ
+        "ท่วมไป 10 เท่า" ไม่ควรแปะป้ายความรุนแรงเท่ากัน"""
+        if threshold <= 0:
+            return 1.0
+        ratio = count / threshold
+        if ratio >= cap_at_x:
+            return 1.0
+        return max(0.80, 0.80 + 0.20 * (ratio - 1.0) / (cap_at_x - 1.0))
+
     def _cool(self, key, now) -> bool:
         """True ถ้าเพิ่งแจ้ง key นี้ไปแล้ว (กัน alert รัวทุก flow)"""
         last = self._last_alert.get(key)
@@ -86,7 +101,8 @@ class RateRuleDetector:
         self._trim(d, ts_s)
         if len(d) >= self.dos_flows and not self._cool(("DoS", src, dst), ts_s):
             alerts.append(RateAlert("DoS", "src_to_dst_rate", src,
-                                    f"{len(d)} flows/{self.window_s:g}s {src}->{dst}"))
+                                    f"{len(d)} flows/{self.window_s:g}s {src}->{dst}",
+                                    confidence=self._scale(len(d), self.dos_flows)))
 
         if int(dst_port) in AUTH_PORTS:
             a = self._auth.setdefault((src, dst, int(dst_port)), deque())
@@ -94,7 +110,8 @@ class RateRuleDetector:
             self._trim(a, ts_s)
             if len(a) >= self.bf_flows and not self._cool(("BF", src, dst, int(dst_port)), ts_s):
                 alerts.append(RateAlert("BruteForce", "auth_port_rate", src,
-                                        f"{len(a)} flows/{self.window_s:g}s {src}->{dst}:{dst_port}"))
+                                        f"{len(a)} flows/{self.window_s:g}s {src}->{dst}:{dst_port}",
+                                        confidence=self._scale(len(a), self.bf_flows)))
 
         # DDoS: count distinct sources hitting one dst. Keep a running {src: count} alongside the
         # deque instead of rebuilding a set every flow — a real flood puts tens of thousands of
@@ -115,7 +132,9 @@ class RateRuleDetector:
             n_src = len(sc)
             if n_src >= self.ddos_sources and not self._cool(("DDoS", dst), ts_s):
                 alerts.append(RateAlert("DDoS", "dst_many_sources", dst,
-                                        f"{len(t)} flows from {n_src} sources/{self.window_s:g}s ->{dst}"))
+                                        f"{len(t)} flows from {n_src} sources/{self.window_s:g}s ->{dst}",
+                                        confidence=max(self._scale(len(t), self.ddos_flows),
+                                                        self._scale(n_src, self.ddos_sources))))
 
         self._n += 1
         if self._n % 5000 == 0:

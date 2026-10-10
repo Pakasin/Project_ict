@@ -662,7 +662,9 @@ export default function Incidents() {
   const sevCounts = { CRITICAL: 0, HIGH: 0, MEDIUM: 0, LOW: 0, INFO: 0 };
   incidents.forEach(item => { const k = getSev(item); if (sevCounts[k] !== undefined) sevCounts[k]++; });
   const total = incidents.length;
-  const openCount = incidents.filter(i => getStatus(i) === 'OPEN').length;
+  // "แจ้งเตือนวิกฤตที่เปิดอยู่" ต้องกรองทั้ง status=OPEN และ severity=CRITICAL — ของเดิมนับแค่ status
+  // ทำให้ตัวเลขไม่ตรงกับ "แจ้งเตือนวิกฤต" ของ Dashboard (ซึ่งนับ CRITICAL ล้วนไม่สนสถานะ)
+  const openCriticalCount = incidents.filter(i => getStatus(i) === 'OPEN' && getSev(i) === 'CRITICAL').length;
   const invCount = incidents.filter(i => getStatus(i) === 'INVESTIGATING').length;
   const mitCount = incidents.filter(i => getStatus(i) === 'MITIGATED').length;
 
@@ -722,7 +724,7 @@ export default function Incidents() {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
         <div className="card elev-sm" style={{ padding: '20px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
-            <div style={{ fontSize: 36, fontWeight: 800, color: '#f87171', lineHeight: 1.1 }}>{openCount}</div>
+            <div style={{ fontSize: 36, fontWeight: 800, color: '#f87171', lineHeight: 1.1 }}>{openCriticalCount}</div>
             <div style={{ fontWeight: 600, fontSize: 13.5, marginTop: 6 }}>แจ้งเตือนวิกฤตที่เปิดอยู่</div>
             <div className="text-muted" style={{ fontSize: 11.5, marginTop: 2 }}>ต้องดำเนินการทันที</div>
           </div>
