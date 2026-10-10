@@ -171,7 +171,14 @@ def main():
     ap.add_argument("--pcap-dir", required=True)
     ap.add_argument("--backend", default="http://127.0.0.1:8000")
     ap.add_argument("--token", default="livedemo")
+    ap.add_argument("--dataset-csv", default=None,
+                     help="append row ที่ enrich แล้ว (41 feature + label) ไว้ทำ fine-tune dataset")
+    ap.add_argument("--label", default="R2L", help="label คงที่สำหรับทุก connection ที่จับได้จาก sensor นี้")
     a = ap.parse_args()
+
+    if a.dataset_csv and not os.path.exists(a.dataset_csv):
+        with open(a.dataset_csv, "w") as f:
+            f.write(",".join([f"f{i}" for i in range(41)]) + ",label,src_ip,ts\n")
 
     pred_url = a.backend.rstrip("/") + "/api/predict"
     all_rows_meta = deque(maxlen=5000)
@@ -197,6 +204,10 @@ def main():
         if len(all_rows_meta) >= 10:
             rows_meta = list(all_rows_meta)
             enrich_window_stats(rows_meta)
+            if a.dataset_csv:
+                with open(a.dataset_csv, "a") as f:
+                    for t0, row, src, dst, flag in rows_meta:
+                        f.write(",".join(f"{v:.6f}" for v in row) + f",{a.label},{src},{t0:.3f}\n")
             window = [m[1] for m in rows_meta[-10:]]
             src_last = rows_meta[-1][2]
             dst_last = rows_meta[-1][3]

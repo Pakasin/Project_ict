@@ -87,3 +87,7 @@ Thumbs.db
 
 # Recorded flow captures (sensor output, can be large)
 data/
+
+# R2L retrain Kaggle outputs (derived, large)
+r2l-live-output/
+r2l-seeds-output/
