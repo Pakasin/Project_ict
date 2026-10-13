@@ -19,23 +19,23 @@ import { useLiveEvents } from '../hooks/useLiveEvents';
 
 const SEV_CONFIG = {
   CRITICAL: { label: 'วิกฤต', bg: 'rgba(239,68,68,.15)', color: '#f87171' },
-  HIGH:     { label: 'สูง',    bg: 'rgba(249,115,22,.15)', color: '#fb923c' },
-  MEDIUM:   { label: 'ปานกลาง', bg: 'rgba(234,179,8,.15)', color: '#fbbf24' },
-  LOW:      { label: 'ต่ำ',    bg: 'rgba(34,197,94,.12)', color: '#4ade80' },
-  INFO:     { label: 'ข้อมูล', bg: 'rgba(59,130,246,.12)', color: '#60a5fa' },
+  HIGH: { label: 'สูง', bg: 'rgba(249,115,22,.15)', color: '#fb923c' },
+  MEDIUM: { label: 'ปานกลาง', bg: 'rgba(234,179,8,.15)', color: '#fbbf24' },
+  LOW: { label: 'ต่ำ', bg: 'rgba(34,197,94,.12)', color: '#4ade80' },
+  INFO: { label: 'ข้อมูล', bg: 'rgba(59,130,246,.12)', color: '#60a5fa' },
 };
 
 const STATUS_CONFIG = {
-  OPEN:          { label: 'เปิดอยู่',      dot: '#f87171', dotBg: 'rgba(239,68,68,.12)' },
+  OPEN: { label: 'เปิดอยู่', dot: '#f87171', dotBg: 'rgba(239,68,68,.12)' },
   INVESTIGATING: { label: 'กำลังตรวจสอบ', dot: '#fbbf24', dotBg: 'rgba(234,179,8,.12)' },
-  MITIGATED:     { label: 'แก้ไขแล้ว',    dot: '#4ade80', dotBg: 'rgba(34,197,94,.12)', check: true },
+  MITIGATED: { label: 'แก้ไขแล้ว', dot: '#4ade80', dotBg: 'rgba(34,197,94,.12)', check: true },
 };
 
 // กระบวนการ Triage: OPEN → INVESTIGATING → MITIGATED. MITIGATED ไม่มี `next` —
 // เป็นขั้นสุดท้าย (การแก้ไขเสร็จจะกักกัน source IP ฝั่งเซิร์ฟเวอร์โดยอัตโนมัติ)
 const STATUS_FLOW = {
-  OPEN:          { next: 'INVESTIGATING', label: 'เริ่มตรวจสอบ',    action: 'เปลี่ยนสถานะเป็นกำลังตรวจสอบ' },
-  INVESTIGATING: { next: 'MITIGATED',     label: 'ทำเครื่องหมายว่าแก้ไขแล้ว', action: 'แก้ไข/กักกันเหตุการณ์เรียบร้อย' },
+  OPEN: { next: 'INVESTIGATING', label: 'เริ่มตรวจสอบ', action: 'เปลี่ยนสถานะเป็นกำลังตรวจสอบ' },
+  INVESTIGATING: { next: 'MITIGATED', label: 'ทำเครื่องหมายว่าแก้ไขแล้ว', action: 'แก้ไข/กักกันเหตุการณ์เรียบร้อย' },
 };
 
 // ── Donut Chart — วงแหวนแสดงสัดส่วนระดับความรุนแรง ─────────────────────────────────────────────────
@@ -44,10 +44,10 @@ function DonutChart({ counts, total }) {
   const C = 2 * Math.PI * R;
   const segments = [
     { key: 'CRITICAL', count: counts.CRITICAL, color: '#f87171' },
-    { key: 'HIGH',     count: counts.HIGH,     color: '#fb923c' },
-    { key: 'MEDIUM',   count: counts.MEDIUM,   color: '#fbbf24' },
-    { key: 'LOW',      count: counts.LOW,      color: '#4ade80' },
-    { key: 'INFO',     count: counts.INFO,     color: '#60a5fa' },
+    { key: 'HIGH', count: counts.HIGH, color: '#fb923c' },
+    { key: 'MEDIUM', count: counts.MEDIUM, color: '#fbbf24' },
+    { key: 'LOW', count: counts.LOW, color: '#4ade80' },
+    { key: 'INFO', count: counts.INFO, color: '#60a5fa' },
   ].filter(s => s.count > 0);
 
   let offset = 0;
@@ -85,9 +85,9 @@ function AuditIcon({ type }) {
 }
 
 // ── Thai Date Picker — ตัวเลือกวันที่ภาษาไทย (ปีพุทธศักราช) ──────────────────────────────────────
-const TH_MONTHS       = ['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน','กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม']; // ชื่อเดือนเต็ม (index 0–11)
-const TH_MONTHS_SHORT = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];     // ชื่อเดือนย่อ (ใช้ใน month picker)
-const TH_DAYS         = ['จันทร์','อังคาร','พุธ','พฤหัส','ศุกร์','เสาร์','อาทิตย์'];                                      // ชื่อวันในสัปดาห์ (เริ่มจันทร์)
+const TH_MONTHS = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม']; // ชื่อเดือนเต็ม (index 0–11)
+const TH_MONTHS_SHORT = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];     // ชื่อเดือนย่อ (ใช้ใน month picker)
+const TH_DAYS = ['จันทร์', 'อังคาร', 'พุธ', 'พฤหัส', 'ศุกร์', 'เสาร์', 'อาทิตย์'];                                      // ชื่อวันในสัปดาห์ (เริ่มจันทร์)
 
 /**
  * ThaiDatePicker — ตัวเลือกวันที่ภาษาไทย (ปีพุทธศักราช)
@@ -106,9 +106,9 @@ function ThaiDatePicker({ value, onChange }) {
   const [inputVal, setInputVal] = React.useState(() => {
     if (!value) return '';
     const d = new Date(value + 'T00:00:00');
-    const dd = String(d.getDate()).padStart(2,'0');
-    const mm = String(d.getMonth()+1).padStart(2,'0');
-    return `${dd}/${mm}/${d.getFullYear()+543}`; // แปลงปี CE → พ.ศ. แล้วแสดง
+    const dd = String(d.getDate()).padStart(2, '0');
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    return `${dd}/${mm}/${d.getFullYear() + 543}`; // แปลงปี CE → พ.ศ. แล้วแสดง
   });
   const ref = React.useRef(null); // ref ของ wrapper ใช้ตรวจจับ click นอก picker
 
@@ -123,16 +123,16 @@ function ThaiDatePicker({ value, onChange }) {
   React.useEffect(() => {
     if (!value) { setInputVal(''); return; }
     const d = new Date(value + 'T00:00:00');
-    const dd = String(d.getDate()).padStart(2,'0');
-    const mm = String(d.getMonth()+1).padStart(2,'0');
-    setInputVal(`${dd}/${mm}/${d.getFullYear()+543}`);
+    const dd = String(d.getDate()).padStart(2, '0');
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    setInputVal(`${dd}/${mm}/${d.getFullYear() + 543}`);
   }, [value]);
 
   // คำนวณค่าพื้นฐานสำหรับ render calendar ในเดือนปัจจุบัน
-  const year  = view.getFullYear();  // ปี ค.ศ. ของ view
+  const year = view.getFullYear();  // ปี ค.ศ. ของ view
   const month = view.getMonth();     // เดือน (0-11) ของ view
   const bYear = year + 543;          // แปลงเป็น พ.ศ. เพื่อแสดงหัว
-  const firstDay    = new Date(year, month, 1).getDay(); // วันที่ 1 ของเดือนตกวันอะไร (0=อาทิตย์)
+  const firstDay = new Date(year, month, 1).getDay(); // วันที่ 1 ของเดือนตกวันอะไร (0=อาทิตย์)
   const startOffset = (firstDay + 6) % 7;               // offset สำหรับ grid (เริ่มจันทร์)
   const daysInMonth = new Date(year, month + 1, 0).getDate(); // จำนวนวันในเดือน
   const selected = value ? new Date(value + 'T00:00:00') : null; // วันที่ที่ถูกเลือกไว้
@@ -145,12 +145,12 @@ function ThaiDatePicker({ value, onChange }) {
    */
   function commitDay(day) {
     const d = new Date(year, month, day);
-    const iso = d.toISOString().slice(0,10); // แปลงเป็น ISO string ส่งกลับ
+    const iso = d.toISOString().slice(0, 10); // แปลงเป็น ISO string ส่งกลับ
     onChange(iso);
     // อัปเดต text input ให้แสดง วว/ดด/ปปปป (พ.ศ.)
-    const dd = String(d.getDate()).padStart(2,'0');
-    const mm = String(d.getMonth()+1).padStart(2,'0');
-    setInputVal(`${dd}/${mm}/${d.getFullYear()+543}`);
+    const dd = String(d.getDate()).padStart(2, '0');
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    setInputVal(`${dd}/${mm}/${d.getFullYear() + 543}`);
     setOpen(false);         // ปิด calendar popup
     setPickerView('day');   // reset กลับเป็น day view
   }
@@ -161,18 +161,18 @@ function ThaiDatePicker({ value, onChange }) {
    * @returns {Date|null} Date object หรือ null ถ้า format ไม่ถูกต้อง
    */
   function parseInput(raw) {
-    const clean = raw.replace(/-/g,'/').trim(); // แทนที่ขีดกลางด้วย /
-    const parts  = clean.split('/');
+    const clean = raw.replace(/-/g, '/').trim(); // แทนที่ขีดกลางด้วย /
+    const parts = clean.split('/');
     if (parts.length !== 3) return null; // ต้องมีพอดี 3 ส่วน
-    const dd = parseInt(parts[0],10);
-    const mm = parseInt(parts[1],10);
-    const yy = parseInt(parts[2],10);
-    if (isNaN(dd)||isNaN(mm)||isNaN(yy)) return null; // ตัวเลขไม่ถูกต้อง
+    const dd = parseInt(parts[0], 10);
+    const mm = parseInt(parts[1], 10);
+    const yy = parseInt(parts[2], 10);
+    if (isNaN(dd) || isNaN(mm) || isNaN(yy)) return null; // ตัวเลขไม่ถูกต้อง
     // ถ้าปีมากกว่า 2500 ถือว่าเป็น พ.ศ. → ลบ 543 เพื่อแปลงเป็น ค.ศ.
     const ceYear = yy > 2500 ? yy - 543 : yy;
-    if (mm < 1||mm > 12||dd < 1||dd > 31||ceYear < 1900||ceYear > 2200) return null; // ค่าเกินขอบเขต
-    const date = new Date(ceYear, mm-1, dd);
-    if (date.getMonth() !== mm-1) return null; // ตรวจสอบวันล้นเดือน เช่น 31/02
+    if (mm < 1 || mm > 12 || dd < 1 || dd > 31 || ceYear < 1900 || ceYear > 2200) return null; // ค่าเกินขอบเขต
+    const date = new Date(ceYear, mm - 1, dd);
+    if (date.getMonth() !== mm - 1) return null; // ตรวจสอบวันล้นเดือน เช่น 31/02
     return date;
   }
 
@@ -184,15 +184,15 @@ function ThaiDatePicker({ value, onChange }) {
    */
   function handleInputChange(e) {
     let raw = e.target.value;
-    raw = raw.replace(/[^0-9/]/g,'');                              // กรองอักขระที่ไม่ใช่ตัวเลขและ /
+    raw = raw.replace(/[^0-9/]/g, '');                              // กรองอักขระที่ไม่ใช่ตัวเลขและ /
     if (raw.length === 2 && !raw.includes('/')) raw += '/';        // ใส่ / หลังวันอัตโนมัติ
     if (raw.length === 5 && raw.split('/').length === 2) raw += '/'; // ใส่ / หลังเดือนอัตโนมัติ
-    if (raw.length > 10) raw = raw.slice(0,10);                    // จำกัดความยาวสูงสุด 10 ตัว
+    if (raw.length > 10) raw = raw.slice(0, 10);                    // จำกัดความยาวสูงสุด 10 ตัว
     setInputVal(raw);
     // ถ้าข้อความที่พิมพ์ parse ได้แล้ว ให้อัปเดต value ทันที
     const d = parseInput(raw);
     if (d) {
-      onChange(d.toISOString().slice(0,10));
+      onChange(d.toISOString().slice(0, 10));
       setView(d); // เลื่อน calendar ไปแสดงเดือนของวันที่นั้น
     }
   }
@@ -205,7 +205,7 @@ function ThaiDatePicker({ value, onChange }) {
   function handleInputKeyDown(e) {
     if (e.key === 'Enter') {
       const d = parseInput(inputVal);
-      if (d) { onChange(d.toISOString().slice(0,10)); setView(d); setOpen(false); }
+      if (d) { onChange(d.toISOString().slice(0, 10)); setView(d); setOpen(false); }
     }
     if (e.key === 'Escape') setOpen(false);
   }
@@ -221,73 +221,75 @@ function ThaiDatePicker({ value, onChange }) {
 
   // ช่วงปีสำหรับ year picker — แสดง 12 ปีต่อหน้า (grid 3×4)
   const yearRangeStart = Math.floor((year - 543) / 12) * 12;
-  const yearsBE = Array.from({length:12},(_,i) => yearRangeStart + i + 543);
+  const yearsBE = Array.from({ length: 12 }, (_, i) => yearRangeStart + i + 543);
 
   // ── ฟังก์ชัน format ข้อความบนปุ่มเลือกวัน (trigger button) ──
   function formatDisplay(d) {
     if (!d) return 'วันที่…'; // placeholder เมื่อยังไม่ได้เลือก
-    return `${d.getDate()} ${TH_MONTHS[d.getMonth()].slice(0,3)}. ${d.getFullYear()+543}`; // เช่น "1 ม.ค. 2568"
+    return `${d.getDate()} ${TH_MONTHS[d.getMonth()].slice(0, 3)}. ${d.getFullYear() + 543}`; // เช่น "1 ม.ค. 2568"
   }
 
-  const navBtn = (style={}) => ({
-    background:'none', border:'none', cursor:'pointer',
-    color:'var(--text-secondary)', padding:'4px 8px',
-    borderRadius:6, fontSize:17, lineHeight:1, ...style
+  const navBtn = (style = {}) => ({
+    background: 'none', border: 'none', cursor: 'pointer',
+    color: 'var(--text-secondary)', padding: '4px 8px',
+    borderRadius: 6, fontSize: 17, lineHeight: 1, ...style
   });
 
   const headerClickable = {
-    cursor:'pointer', borderRadius:6, padding:'2px 6px',
-    transition:'background .12s',
-    ':hover':{ background:'var(--row-head-bg)' },
+    cursor: 'pointer', borderRadius: 6, padding: '2px 6px',
+    transition: 'background .12s',
+    ':hover': { background: 'var(--row-head-bg)' },
   };
 
   return (
-    <div ref={ref} style={{ position:'relative' }}>
+    <div ref={ref} style={{ position: 'relative' }}>
       {/* ── trigger button ── */}
       <button
         onClick={() => {
           // sync view to selected date when opening so selected month/year is visible
           if (value) setView(new Date(value + 'T00:00:00'));
-          setOpen(o=>!o);
+          setOpen(o => !o);
           setPickerView('day');
         }}
         style={{
-          display:'flex', alignItems:'center', gap:8,
-          padding:'8px 14px', borderRadius:8,
-          border:`1.5px solid ${open ? 'var(--accent)' : 'var(--border-soft)'}`,
-          background:'var(--row-head-bg)', color: value ? 'var(--text)' : 'var(--text-secondary)',
-          cursor:'pointer', fontSize:12.5, fontWeight: value ? 600 : 400,
-          whiteSpace:'nowrap', transition:'border-color .15s',
+          display: 'flex', alignItems: 'center', gap: 8,
+          padding: '8px 14px', borderRadius: 8,
+          border: `1.5px solid ${open ? 'var(--accent)' : 'var(--border-soft)'}`,
+          background: 'var(--row-head-bg)', color: value ? 'var(--text)' : 'var(--text-secondary)',
+          cursor: 'pointer', fontSize: 12.5, fontWeight: value ? 600 : 400,
+          whiteSpace: 'nowrap', transition: 'border-color .15s',
         }}
       >
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-          <rect x="3" y="4" width="18" height="18" rx="2"/>
-          <line x1="16" y1="2" x2="16" y2="6"/>
-          <line x1="8" y1="2" x2="8" y2="6"/>
-          <line x1="3" y1="10" x2="21" y2="10"/>
+          <rect x="3" y="4" width="18" height="18" rx="2" />
+          <line x1="16" y1="2" x2="16" y2="6" />
+          <line x1="8" y1="2" x2="8" y2="6" />
+          <line x1="3" y1="10" x2="21" y2="10" />
         </svg>
         {value ? formatDisplay(new Date(value + 'T00:00:00')) : 'วันที่…'}
         {value && (
-          <span onClick={e=>{ e.stopPropagation(); onChange(''); setInputVal(''); }}
-            style={{ marginLeft:4, opacity:.5, lineHeight:1, fontSize:14 }}>✕</span>
+          <span onClick={e => { e.stopPropagation(); onChange(''); setInputVal(''); }}
+            style={{ marginLeft: 4, opacity: .5, lineHeight: 1, fontSize: 14 }}>✕</span>
         )}
       </button>
 
       {open && (
         <div style={{
-          position:'absolute', top:'calc(100% + 6px)', left:0, zIndex:200,
-          background:'var(--card-bg)', border:'1px solid var(--border-soft)',
-          borderRadius:14, boxShadow:'0 8px 32px rgba(0,0,0,.2)',
-          padding:16, width:300,
+          position: 'absolute', top: 'calc(100% + 6px)', left: 0, zIndex: 200,
+          background: 'var(--card-bg)', border: '1px solid var(--border-soft)',
+          borderRadius: 14, boxShadow: '0 8px 32px rgba(0,0,0,.2)',
+          padding: 16, width: 300,
         }}>
 
           {/* ── manual text input ── */}
-          <div style={{ marginBottom:12, display:'flex', alignItems:'center', gap:8,
-            background:'var(--row-head-bg)', border:'1px solid var(--border-soft)',
-            borderRadius:8, padding:'7px 12px' }}>
+          <div style={{
+            marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8,
+            background: 'var(--row-head-bg)', border: '1px solid var(--border-soft)',
+            borderRadius: 8, padding: '7px 12px'
+          }}>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" strokeWidth="2">
-              <line x1="17" y1="10" x2="3" y2="10"/><line x1="21" y1="6" x2="3" y2="6"/>
-              <line x1="21" y1="14" x2="3" y2="14"/><line x1="17" y1="18" x2="3" y2="18"/>
+              <line x1="17" y1="10" x2="3" y2="10" /><line x1="21" y1="6" x2="3" y2="6" />
+              <line x1="21" y1="14" x2="3" y2="14" /><line x1="17" y1="18" x2="3" y2="18" />
             </svg>
             <input
               value={inputVal}
@@ -295,76 +297,82 @@ function ThaiDatePicker({ value, onChange }) {
               onKeyDown={handleInputKeyDown}
               placeholder="วว/ดด/ปปปป (พ.ศ.)"
               style={{
-                border:'none', background:'transparent', outline:'none',
-                fontSize:12.5, color:'var(--text)', flex:1,
-                fontFamily:'inherit',
+                border: 'none', background: 'transparent', outline: 'none',
+                fontSize: 12.5, color: 'var(--text)', flex: 1,
+                fontFamily: 'inherit',
               }}
             />
           </div>
 
           {/* ── DAY VIEW ── */}
           {pickerView === 'day' && (<>
-            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:10 }}>
-              <button style={navBtn()} onClick={() => setView(new Date(year, month-1, 1))}>‹</button>
-              <div style={{ display:'flex', gap:6, alignItems:'center' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+              <button style={navBtn()} onClick={() => setView(new Date(year, month - 1, 1))}>‹</button>
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                 <button onClick={() => setPickerView('month')}
-                  style={{ background:'none', border:'none', cursor:'pointer',
-                    fontWeight:700, fontSize:13.5, color:'var(--text)',
-                    padding:'2px 8px', borderRadius:6,
-                    transition:'background .12s' }}
-                  onMouseEnter={e=>e.currentTarget.style.background='var(--row-head-bg)'}
-                  onMouseLeave={e=>e.currentTarget.style.background='none'}
+                  style={{
+                    background: 'none', border: 'none', cursor: 'pointer',
+                    fontWeight: 700, fontSize: 13.5, color: 'var(--text)',
+                    padding: '2px 8px', borderRadius: 6,
+                    transition: 'background .12s'
+                  }}
+                  onMouseEnter={e => e.currentTarget.style.background = 'var(--row-head-bg)'}
+                  onMouseLeave={e => e.currentTarget.style.background = 'none'}
                 >
                   {TH_MONTHS[month]}
                 </button>
                 <button onClick={() => setPickerView('year')}
-                  style={{ background:'none', border:'none', cursor:'pointer',
-                    fontWeight:600, fontSize:13.5, color:'var(--text-secondary)',
-                    padding:'2px 8px', borderRadius:6,
-                    transition:'background .12s' }}
-                  onMouseEnter={e=>e.currentTarget.style.background='var(--row-head-bg)'}
-                  onMouseLeave={e=>e.currentTarget.style.background='none'}
+                  style={{
+                    background: 'none', border: 'none', cursor: 'pointer',
+                    fontWeight: 600, fontSize: 13.5, color: 'var(--text-secondary)',
+                    padding: '2px 8px', borderRadius: 6,
+                    transition: 'background .12s'
+                  }}
+                  onMouseEnter={e => e.currentTarget.style.background = 'var(--row-head-bg)'}
+                  onMouseLeave={e => e.currentTarget.style.background = 'none'}
                 >
                   {bYear}
                 </button>
               </div>
-              <button style={navBtn()} onClick={() => setView(new Date(year, month+1, 1))}>›</button>
+              <button style={navBtn()} onClick={() => setView(new Date(year, month + 1, 1))}>›</button>
             </div>
 
-            <div style={{ display:'grid', gridTemplateColumns:'repeat(7,1fr)', gap:2, marginBottom:4 }}>
-              {TH_DAYS.map(d=>(
-                <div key={d} style={{ textAlign:'center', fontSize:10, fontWeight:600,
-                  color:'var(--text-tertiary)', padding:'2px 0' }}>{d}</div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 2, marginBottom: 4 }}>
+              {TH_DAYS.map(d => (
+                <div key={d} style={{
+                  textAlign: 'center', fontSize: 10, fontWeight: 600,
+                  color: 'var(--text-tertiary)', padding: '2px 0'
+                }}>{d}</div>
               ))}
             </div>
-            <div style={{ display:'grid', gridTemplateColumns:'repeat(7,1fr)', gap:2 }}>
-              {Array(startOffset).fill(null).map((_,i)=><div key={'e'+i}/>)}
-              {Array(daysInMonth).fill(null).map((_,i)=>{
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 2 }}>
+              {Array(startOffset).fill(null).map((_, i) => <div key={'e' + i} />)}
+              {Array(daysInMonth).fill(null).map((_, i) => {
                 // sel = isSelected: วันที่ user เลือกจริง — tod = วันนี้ของระบบ (คนละ state)
-                const day=i+1; const sel=isSelected(day); const tod=isToday(day);
+                const day = i + 1; const sel = isSelected(day); const tod = isToday(day);
                 return (
-                  <button key={day} onClick={()=>commitDay(day)}
+                  <button key={day} onClick={() => commitDay(day)}
                     style={{
-                      position:'relative',
-                      width:'100%', aspectRatio:'1', borderRadius:8,
-                      cursor:'pointer', fontSize:12.5, fontWeight:sel?700:400,
-                      transition:'background .12s, border-color .12s',
+                      position: 'relative',
+                      width: '100%', aspectRatio: '1', borderRadius: 8,
+                      cursor: 'pointer', fontSize: 12.5, fontWeight: sel ? 700 : 400,
+                      transition: 'background .12s, border-color .12s',
                       // selected: สีฟ้าจาง — ไม่ผูกกับ isToday เลย
                       border: sel ? '1px solid rgba(37,99,235,0.20)' : '1px solid transparent',
                       background: sel ? 'rgba(37,99,235,0.12)' : 'transparent',
                       color: sel ? '#2563EB' : 'var(--text)',
                     }}
-                    onMouseEnter={e=>{ if(!sel) e.currentTarget.style.background='var(--row-head-bg)'; }}
-                    onMouseLeave={e=>{ if(!sel) e.currentTarget.style.background='transparent'; }}
+                    onMouseEnter={e => { if (!sel) e.currentTarget.style.background = 'var(--row-head-bg)'; }}
+                    onMouseLeave={e => { if (!sel) e.currentTarget.style.background = 'transparent'; }}
                   >
                     {day}
                     {/* วันนี้: dot เล็กๆ เท่านั้น ห้าม background เด็ดขาด */}
                     {tod && !sel && (
                       <span style={{
-                        position:'absolute', bottom:2, left:'50%', transform:'translateX(-50%)',
-                        width:3, height:3, borderRadius:'50%',
-                        background:'var(--text-tertiary)', display:'block',
-                      }}/>
+                        position: 'absolute', bottom: 2, left: '50%', transform: 'translateX(-50%)',
+                        width: 3, height: 3, borderRadius: '50%',
+                        background: 'var(--text-tertiary)', display: 'block',
+                      }} />
                     )}
                   </button>
                 );
@@ -374,17 +382,19 @@ function ThaiDatePicker({ value, onChange }) {
 
           {/* ── MONTH VIEW ── */}
           {pickerView === 'month' && (<>
-            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:12 }}>
-              <button style={navBtn()} onClick={()=>setView(new Date(year-1,month,1))}>‹</button>
-              <button onClick={()=>setPickerView('year')}
-                style={{ background:'none', border:'none', cursor:'pointer',
-                  fontWeight:700, fontSize:13.5, color:'var(--text)',
-                  padding:'2px 8px', borderRadius:6 }}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+              <button style={navBtn()} onClick={() => setView(new Date(year - 1, month, 1))}>‹</button>
+              <button onClick={() => setPickerView('year')}
+                style={{
+                  background: 'none', border: 'none', cursor: 'pointer',
+                  fontWeight: 700, fontSize: 13.5, color: 'var(--text)',
+                  padding: '2px 8px', borderRadius: 6
+                }}
               >{bYear}</button>
-              <button style={navBtn()} onClick={()=>setView(new Date(year+1,month,1))}>›</button>
+              <button style={navBtn()} onClick={() => setView(new Date(year + 1, month, 1))}>›</button>
             </div>
-            <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:4 }}>
-              {TH_MONTHS_SHORT.map((m,i)=>{
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 4 }}>
+              {TH_MONTHS_SHORT.map((m, i) => {
                 // isSelectedM: เดือนที่ user เลือกจริงๆ — เปรียบกับ selected (จาก prop value) เท่านั้น
                 // ต้องเช็คทั้ง month และ year ของ selected กับปีที่กำลัง view อยู่
                 const isSelectedM = selected
@@ -394,14 +404,14 @@ function ThaiDatePicker({ value, onChange }) {
                 const isViewM = i === month && !isSelectedM;
                 return (
                   <button key={i}
-                    onClick={()=>{
+                    onClick={() => {
                       // เมื่อกดเดือน: navigate view ไปที่เดือนนั้น แล้วกลับไป day view
                       // การ commit วันที่จริงยังต้องทำใน day view
                       setView(new Date(year, i, 1));
                       setPickerView('day');
                     }}
                     style={{
-                      padding:'8px 2px', borderRadius:8, cursor:'pointer', textAlign:'center',
+                      padding: '8px 2px', borderRadius: 8, cursor: 'pointer', textAlign: 'center',
                       // selected: พื้นหลังฟ้าเข้มแบบจาง + border ฟ้า
                       border: isSelectedM
                         ? '1px solid rgba(37,99,235,0.25)'
@@ -411,16 +421,16 @@ function ThaiDatePicker({ value, onChange }) {
                         : 'transparent',
                       color: isSelectedM ? '#2563EB' : 'var(--text)',
                       fontWeight: isSelectedM ? 700 : 500,
-                      fontSize:12.5,
-                      transition:'background .12s, border-color .12s, color .12s',
+                      fontSize: 12.5,
+                      transition: 'background .12s, border-color .12s, color .12s',
                     }}
-                    onMouseEnter={e=>{
+                    onMouseEnter={e => {
                       if (!isSelectedM) {
                         e.currentTarget.style.background = 'var(--row-head-bg)';
                         e.currentTarget.style.borderColor = 'var(--border-soft)';
                       }
                     }}
-                    onMouseLeave={e=>{
+                    onMouseLeave={e => {
                       if (!isSelectedM) {
                         e.currentTarget.style.background = 'transparent';
                         e.currentTarget.style.borderColor = 'transparent';
@@ -434,24 +444,24 @@ function ThaiDatePicker({ value, onChange }) {
 
           {/* ── YEAR VIEW ── */}
           {pickerView === 'year' && (<>
-            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:12 }}>
-              <button style={navBtn()} onClick={()=>setView(new Date(year-12,month,1))}>‹</button>
-              <span style={{ fontWeight:700, fontSize:13.5, color:'var(--text)' }}>
-                {yearsBE[0]}–{yearsBE[yearsBE.length-1]}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+              <button style={navBtn()} onClick={() => setView(new Date(year - 12, month, 1))}>‹</button>
+              <span style={{ fontWeight: 700, fontSize: 13.5, color: 'var(--text)' }}>
+                {yearsBE[0]}–{yearsBE[yearsBE.length - 1]}
               </span>
-              <button style={navBtn()} onClick={()=>setView(new Date(year+12,month,1))}>›</button>
+              <button style={navBtn()} onClick={() => setView(new Date(year + 12, month, 1))}>›</button>
             </div>
-            <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:6 }}>
-              {yearsBE.map(by=>{
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 6 }}>
+              {yearsBE.map(by => {
                 // isViewY: ปีที่ view กำลัง navigate อยู่
                 const isViewY = (by - 543) === year;
                 // isSelectedY: ปีของวันที่ที่ user เลือกจริงๆ (จาก prop value)
                 const isSelectedY = selected && (by - 543) === selected.getFullYear();
                 return (
-                  <button key={by} onClick={()=>{ setView(new Date(by-543,month,1)); setPickerView('month'); }}
+                  <button key={by} onClick={() => { setView(new Date(by - 543, month, 1)); setPickerView('month'); }}
                     style={{
-                      padding:'10px 4px', borderRadius:8, cursor:'pointer', fontSize:12.5,
-                      transition:'background .12s',
+                      padding: '10px 4px', borderRadius: 8, cursor: 'pointer', fontSize: 12.5,
+                      transition: 'background .12s',
                       // ปีที่ selected ใช้สีฟ้าเข้มแบบจาง; ปี view ปัจจุบัน outline เบาๆ; อื่นๆ transparent
                       border: isSelectedY
                         ? '1px solid rgba(37,99,235,0.25)'
@@ -462,10 +472,10 @@ function ThaiDatePicker({ value, onChange }) {
                       color: isSelectedY ? '#2563EB' : 'var(--text)',
                       fontWeight: isSelectedY ? 700 : isViewY ? 600 : 500,
                     }}
-                    onMouseEnter={e=>{
+                    onMouseEnter={e => {
                       if (!isSelectedY) e.currentTarget.style.background = 'var(--row-head-bg)';
                     }}
-                    onMouseLeave={e=>{
+                    onMouseLeave={e => {
                       if (!isSelectedY) e.currentTarget.style.background = 'transparent';
                     }}
                   >{by}</button>
@@ -512,26 +522,26 @@ export default function Incidents() {
   const liveEnabled = conn.status !== CONN_STATUS.DISCONNECTED; // ปุ่มซิงค์ disabled ถ้าไม่เชื่อมต่อ
 
   // incidents: รายการทั้งหมด — เริ่มจาก MOCK แล้วเขียนทับด้วยข้อมูลจาก API
-  const [incidents,      setIncidents]      = useState([]);
-  const [loading,        setLoading]        = useState(false);
-  const [loadError,      setLoadError]      = useState(false);  // true = เรียก /api/logs ไม่สำเร็จ
+  const [incidents, setIncidents] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState(false);  // true = เรียก /api/logs ไม่สำเร็จ
 
   // selectedEvent: event ที่คลิกเปิด ThreatInspectModal (null = ไม่มี modal เปิดอยู่)
-  const [selectedEvent,  setSelectedEvent]  = useState(null);
+  const [selectedEvent, setSelectedEvent] = useState(null);
 
   // ── Filter & Pagination State ──
-  const [filterStatus,   setFilterStatus]   = useState('ALL');       // กรองตามสถานะ Triage
-  const [statusMap,      setStatusMap]      = useState({});          // { id: 'OPEN'|'INVESTIGATING'|'MITIGATED' }
-  const [auditLogs,      setAuditLogs]      = useState([]);  // บันทึกการดำเนินการ
+  const [filterStatus, setFilterStatus] = useState('ALL');       // กรองตามสถานะ Triage
+  const [statusMap, setStatusMap] = useState({});          // { id: 'OPEN'|'INVESTIGATING'|'MITIGATED' }
+  const [auditLogs, setAuditLogs] = useState([]);  // บันทึกการดำเนินการ
   const [severityFilter, setSeverityFilter] = useState('ALL');       // กรองระดับความรุนแรง
-  const [typeFilter,     setTypeFilter]     = useState('ALL');       // กรองประเภทการโจมตี
-  const [dateFilter,     setDateFilter]     = useState('');          // ISO prefix filter ('YYYY-MM-DD')
-  const [page,           setPage]           = useState(1);           // หน้าปัจจุบัน
-  const [updatingId,     setUpdatingId]     = useState(null);        // ID ที่กำลัง update (loading)
-  const [search,         setSearch]         = useState('');          // ค้นหา IP / ประเภท / โมเดล / ผู้รับผิดชอบ
-  const [assignees,      setAssignees]      = useState({});          // { event_id: username }
-  const [selected,       setSelected]       = useState(() => new Set()); // event id ที่ติ๊กเลือกไว้ (bulk action)
-  const [notice,         setNotice]         = useState('');          // ข้อความแจ้งผลการดำเนินการ/ข้อผิดพลาด
+  const [typeFilter, setTypeFilter] = useState('ALL');       // กรองประเภทการโจมตี
+  const [dateFilter, setDateFilter] = useState('');          // ISO prefix filter ('YYYY-MM-DD')
+  const [page, setPage] = useState(1);           // หน้าปัจจุบัน
+  const [updatingId, setUpdatingId] = useState(null);        // ID ที่กำลัง update (loading)
+  const [search, setSearch] = useState('');          // ค้นหา IP / ประเภท / โมเดล / ผู้รับผิดชอบ
+  const [assignees, setAssignees] = useState({});          // { event_id: username }
+  const [selected, setSelected] = useState(() => new Set()); // event id ที่ติ๊กเลือกไว้ (bulk action)
+  const [notice, setNotice] = useState('');          // ข้อความแจ้งผลการดำเนินการ/ข้อผิดพลาด
 
   const PAGE_SIZE = 10; // ❗ เปลี่ยนตรงนี้เพื่อปรับจำนวนรายการต่อหน้า
 
@@ -700,7 +710,7 @@ export default function Incidents() {
           title={isGeneralView ? 'คุณไม่มีสิทธิ์ดำเนินการนี้' : !liveEnabled ? 'ขาดการเชื่อมต่ออยู่ — เชื่อมต่อสดก่อนจึงจะซิงค์ได้' : undefined}
           style={{ opacity: (isGeneralView || !liveEnabled) ? 0.45 : 1, cursor: (isGeneralView || !liveEnabled) ? 'not-allowed' : 'pointer' }}
         >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.73 21a2 2 0 0 1-3.46 0" /></svg>
           <span style={{ marginLeft: 8 }}>ซิงค์ตัวแจ้งเตือน</span>
         </button>
       </div>
@@ -785,7 +795,7 @@ export default function Incidents() {
                     <span style={{ width: 10, height: 10, borderRadius: 999, background: v.color, display: 'inline-block' }} />
                     {v.label}
                   </span>
-                  <span style={{ fontWeight: 700 }}>{sevCounts[k]} <span className="text-muted" style={{ fontWeight: 400, fontSize: 12 }}>({((sevCounts[k]/(total || 1))*100).toFixed(0)}%)</span></span>
+                  <span style={{ fontWeight: 700 }}>{sevCounts[k]} <span className="text-muted" style={{ fontWeight: 400, fontSize: 12 }}>({((sevCounts[k] / (total || 1)) * 100).toFixed(0)}%)</span></span>
                 </div>
               ))}
             </div>
@@ -854,12 +864,12 @@ export default function Incidents() {
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
             <thead>
               <tr style={{ borderBottom: '2px solid var(--border-soft)' }}>
-                {['__sel','เวลา','ระดับความรุนแรง','ประเภทเหตุการณ์','รายละเอียด','แหล่งที่มา','เป้าหมาย','สถานะ','ผู้รับผิดชอบ','การดำเนินการ'].map(h => (
+                {['__sel', 'เวลา', 'ระดับความรุนแรง', 'ประเภทเหตุการณ์', 'รายละเอียด', 'แหล่งที่มา', 'เป้าหมาย', 'สถานะ', 'ผู้รับผิดชอบ', 'การดำเนินการ'].map(h => (
                   <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11.5, fontWeight: 600, color: 'var(--text-tertiary)', whiteSpace: 'nowrap' }}>
                     {h === '__sel'
                       ? <input type="checkbox" disabled={isGeneralView} title="เลือกทั้งหน้า"
-                          checked={paginated.length > 0 && paginated.every(i => selected.has(i.id))}
-                          onChange={e => setSelected(prev => { const n = new Set(prev); paginated.forEach(i => e.target.checked ? n.add(i.id) : n.delete(i.id)); return n; })} />
+                        checked={paginated.length > 0 && paginated.every(i => selected.has(i.id))}
+                        onChange={e => setSelected(prev => { const n = new Set(prev); paginated.forEach(i => e.target.checked ? n.add(i.id) : n.delete(i.id)); return n; })} />
                       : <>{h}{h === 'การดำเนินการ' ? ' ' : ''}{h === 'การดำเนินการ' && <InfoHelp id="incActions" />}</>}
                   </th>
                 ))}
@@ -887,7 +897,7 @@ export default function Incidents() {
                         onChange={e => setSelected(prev => { const n = new Set(prev); e.target.checked ? n.add(item.id) : n.delete(item.id); return n; })} />
                     </td>
                     <td style={{ padding: '14px 14px', verticalAlign: 'top' }}>
-                      <div style={{ fontSize: 12.5, fontWeight: 600, whiteSpace: 'nowrap' }}>{formatTH(item.timestamp).split(' ').slice(0,2).join(' ')}</div>
+                      <div style={{ fontSize: 12.5, fontWeight: 600, whiteSpace: 'nowrap' }}>{formatTH(item.timestamp).split(' ').slice(0, 2).join(' ')}</div>
                       <div style={{ fontSize: 11.5, fontWeight: 600, marginTop: 1, color: 'var(--text)' }}>{formatTH(item.timestamp).split(' ')[2]}</div>
                       <div className="text-muted" style={{ fontSize: 11, marginTop: 2 }}>{timeAgo(item.timestamp)}</div>
                     </td>
@@ -972,8 +982,10 @@ export default function Incidents() {
           </button>
           {Array.from({ length: Math.min(totalPages, 10) }, (_, i) => i + 1).map(n => (
             <button key={n} onClick={() => setPage(n)}
-              style={{ padding: '6px 11px', borderRadius: 8, border: '1px solid var(--border-soft)', fontSize: 13, fontWeight: 600, cursor: 'pointer',
-                background: page === n ? 'var(--accent)' : 'transparent', color: page === n ? '#fff' : 'var(--text)' }}>
+              style={{
+                padding: '6px 11px', borderRadius: 8, border: '1px solid var(--border-soft)', fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                background: page === n ? 'var(--accent)' : 'transparent', color: page === n ? '#fff' : 'var(--text)'
+              }}>
               {n}
             </button>
           ))}
