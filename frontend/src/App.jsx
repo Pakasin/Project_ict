@@ -14,7 +14,6 @@ import { LIVE_EVENT } from './hooks/useLiveEvents'
 import { Routes, Route, NavLink, useNavigate, useLocation } from 'react-router-dom'
 import Dashboard from './pages/Dashboard'
 import Logs from './pages/Logs'
-import Test from './pages/Test'
 import Login from './pages/Login'
 import Analytics from './pages/Analytics'
 import Incidents from './pages/Incidents'
@@ -36,7 +35,6 @@ const ICONS = {
   analytics:  "M5 20V10M12 20V4M19 20v-6",                                      // Bar chart
   incidents:  "M12 3l9 16H3L12 3zM12 10v4M12 17h.01",                          // รูปสามเหลี่ยม alert
   logs:       "M5 3h14v18H5V3zM8 8h8M8 12h8M8 16h5",                           // เอกสาร
-  manualTest: "M3 4h18v16H3V4zM7 9l3 3-3 3M12 15h4",                           // Terminal
   settings:   "M12 12m-3 0a3 3 0 1 0 6 0a3 3 0 1 0 -6 0M12 3v3M12 18v3M3 12h3M18 12h3M5.5 5.5l2 2M16.5 16.5l2 2M5.5 18.5l2-2M16.5 7.5l2-2", // เฟือง
 }
 
@@ -253,9 +251,6 @@ function AppShell({ auth, onLogout }) {
           <NavLink to="/logs" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`} onClick={handleNavClick}>
             <span className="nav-icon"><Icon d={ICONS.logs} /></span>{t.nav.logs}
           </NavLink>
-          <NavLink to="/test" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`} onClick={handleNavClick}>
-            <span className="nav-icon"><Icon d={ICONS.manualTest} /></span>{t.nav.manualTest}
-          </NavLink>
           <NavLink to="/settings" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`} onClick={handleNavClick}>
             <span className="nav-icon"><Icon d={ICONS.settings} /></span>{t.nav.settings}
           </NavLink>
@@ -305,7 +300,6 @@ function AppShell({ auth, onLogout }) {
           <Route path="/analytics" element={<Analytics />} />
           <Route path="/incidents" element={<Incidents />} />
           <Route path="/logs" element={<Logs />} />
-          <Route path="/test" element={<Test />} />
           <Route path="/settings" element={<Settings />} />
         </Routes>
       </main>

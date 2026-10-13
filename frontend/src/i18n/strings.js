@@ -7,7 +7,7 @@ export const STR = {
     tagline: "ระบบพอร์ทัลความปลอดภัย & ข่าวกรองภัยคุกคามด้วย AI",
     defconSub: "ทุกภาคส่วนปลอดภัย",
     logout: "ออกจากระบบ",
-    nav: { dashboard: "แดชบอร์ด", analytics: "การวิเคราะห์", incidents: "เหตุการณ์", logs: "บันทึกเหตุการณ์", manualTest: "ทดสอบด้วยตนเอง", settings: "ตั้งค่า" },
+    nav: { dashboard: "แดชบอร์ด", analytics: "การวิเคราะห์", incidents: "เหตุการณ์", logs: "บันทึกเหตุการณ์", settings: "ตั้งค่า" },
     access: { title: "ไม่มีสิทธิ์เข้าถึง", desc: "หน้านี้สงวนเฉพาะผู้ดูแลระบบเท่านั้น บัญชีของคุณไม่มีสิทธิ์เข้าถึงส่วนนี้", back: "กลับสู่แดชบอร์ด" },
     login: {
       tabSignin: "เข้าสู่ระบบ", tabSignup: "สมัครสมาชิก",
@@ -74,7 +74,7 @@ export const STR = {
       emptyTitle: "ไม่พบเหตุการณ์ย้อนหลัง", emptySub: "ลองปรับเงื่อนไขการค้นหาหรือตัวกรอง",
       colRef: "รหัสอ้างอิง", colModel: "โมเดล", colAttack: "ประเภทการโจมตี", colConfidence: "ความเชื่อมั่น", colSeverity: "ความรุนแรง", colStatus: "สถานะ", colSource: "ไอพีต้นทาง", colTimestamp: "เวลา", colAlert: "แจ้งเตือน",
       prevPage: "← หน้าก่อน", nextPage: "หน้าถัดไป →", pageLabel: "หน้า", alertsOnlyLabel: "แจ้งเตือนความสำคัญสูงเท่านั้น",
-      clearFilters: "ล้างตัวกรอง", goToManualTest: "ไปที่ทดสอบด้วยตนเอง"
+      clearFilters: "ล้างตัวกรอง"
     },
     manual: {
       title: "แซนด์บ็อกซ์จำลองการโจมตีด้วยตนเอง", subtitle: "ป้อนข้อมูลตรงเข้าโมเดล LSTM ทั้ง 3 เพื่อทดสอบพฤติกรรมอย่างละเอียด",
@@ -157,7 +157,7 @@ export const STR = {
     tagline: "Security Portal & AI Threat Intelligence",
     defconSub: "All sectors secure",
     logout: "Log out",
-    nav: { dashboard: "Dashboard", analytics: "Analytics", incidents: "Incidents", logs: "Logs", manualTest: "Manual Test", settings: "Settings" },
+    nav: { dashboard: "Dashboard", analytics: "Analytics", incidents: "Incidents", logs: "Logs", settings: "Settings" },
     access: { title: "Access Denied", desc: "This section is for administrators only. Your account does not have permission to access it.", back: "Back to Dashboard" },
     login: {
       tabSignin: "Sign In", tabSignup: "Sign Up",
@@ -224,7 +224,7 @@ export const STR = {
       emptyTitle: "No historical events found", emptySub: "Try adjusting your search criteria or filters",
       colRef: "Reference ID", colModel: "Model", colAttack: "Attack Type", colConfidence: "Confidence", colSeverity: "Severity", colStatus: "Status", colSource: "Source IP", colTimestamp: "Time", colAlert: "Alert",
       prevPage: "← Prev Page", nextPage: "Next Page →", pageLabel: "Page", alertsOnlyLabel: "High-priority alerts only",
-      clearFilters: "Clear Filters", goToManualTest: "Go to Manual Test"
+      clearFilters: "Clear Filters"
     },
     manual: {
       title: "Neural Sandbox & Manual Attack Simulation", subtitle: "Inject crafted payloads directly into the 3 deep LSTM models for precision testing",
